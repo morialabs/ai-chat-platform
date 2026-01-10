@@ -2,10 +2,11 @@
 
 from claude_code_sdk import ClaudeCodeOptions
 
+from src.agent.hooks import create_hooks
 from src.config import settings
 
 
-def get_default_options() -> ClaudeCodeOptions:
+def get_default_options(*, include_hooks: bool = True) -> ClaudeCodeOptions:
     """Create default agent options."""
     return ClaudeCodeOptions(
         # Core settings
@@ -30,4 +31,6 @@ def get_default_options() -> ClaudeCodeOptions:
 You are an AI assistant for {settings.app_name}.
 Be helpful, concise, and accurate in your responses.
 """,
+        # Hooks for validation and logging
+        hooks=create_hooks() if include_hooks else None,
     )
