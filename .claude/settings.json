@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git checkout:*)",
+      "Bash(git branch:*)",
+      "Bash(git fetch:*)",
+      "Bash(git pull:*)",
+      "Bash(git reset:*)",
+      "Bash(git remote:*)",
+      "Bash(gh pr:*)",
+      "Bash(gh api:*)",
+      "Bash(gh repo:*)",
+      "Bash(make:*)",
+      "Bash(cd backend && venv/bin/*)",
+      "Bash(python3:*)",
+      "Bash(pytest:*)",
+      "Bash(cd frontend && pnpm:*)",
+      "Bash(pnpm:*)",
+      "Bash(npx playwright:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(find:*)",
+      "Bash(grep:*)",
+      "Bash(pwd)",
+      "Bash(echo:*)",
+      "Bash(wc:*)",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:docs.github.com)",
+      "WebFetch(domain:npmjs.com)",
+      "WebFetch(domain:pypi.org)",
+      "WebFetch(domain:nextjs.org)",
+      "WebFetch(domain:react.dev)",
+      "WebFetch(domain:fastapi.tiangolo.com)",
+      "WebFetch(domain:docs.anthropic.com)"
+    ],
+    "deny": [
+      "Bash(sudo:*)",
+      "Bash(rm -rf /*)",
+      "Bash(chmod 777:*)"
+    ]
+  }
+}
