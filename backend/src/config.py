@@ -33,7 +33,10 @@ class Settings(BaseSettings):
     @property
     def allowed_origins(self) -> list[str]:
         """Dynamic CORS origins based on frontend_port."""
-        return [f"http://localhost:{self.frontend_port}", f"http://127.0.0.1:{self.frontend_port}"]
+        return [
+            f"http://localhost:{self.frontend_port}",
+            f"http://127.0.0.1:{self.frontend_port}",
+        ]
 
     @property
     def is_configured(self) -> bool:
