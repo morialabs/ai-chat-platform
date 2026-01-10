@@ -1,5 +1,9 @@
 import { defineConfig, devices } from "@playwright/test";
 
+// Port configuration from environment variables with defaults
+const frontendPort = process.env.PORT || "3000";
+const backendPort = process.env.BACKEND_PORT || "8000";
+
 /**
  * Playwright configuration for AI Chat Platform E2E tests.
  *
@@ -23,7 +27,7 @@ export default defineConfig({
   // Shared settings for all projects
   use: {
     // Base URL for the frontend
-    baseURL: "http://localhost:3000",
+    baseURL: `http://localhost:${frontendPort}`,
     // Collect trace on first retry for debugging
     trace: "retain-on-failure",
     // Screenshot on failure
@@ -32,17 +36,16 @@ export default defineConfig({
   // Configure both frontend and backend servers to start automatically
   webServer: [
     {
-      command:
-        "cd ../backend && venv/bin/uvicorn src.main:app --host 0.0.0.0 --port 8000",
-      url: "http://localhost:8000/health",
+      command: `cd ../backend && venv/bin/uvicorn src.main:app --host 0.0.0.0 --port ${backendPort}`,
+      url: `http://localhost:${backendPort}/health`,
       reuseExistingServer: !process.env.CI,
       timeout: 30000,
       stdout: "pipe",
       stderr: "pipe",
     },
     {
-      command: "pnpm dev",
-      url: "http://localhost:3000",
+      command: `pnpm dev --port ${frontendPort}`,
+      url: `http://localhost:${frontendPort}`,
       reuseExistingServer: !process.env.CI,
       timeout: 30000,
       stdout: "pipe",

@@ -27,7 +27,7 @@ type-check:
 	cd backend && venv/bin/mypy src
 
 backend-dev:
-	cd backend && venv/bin/uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
+	cd backend && set -a && [ -f .env ] && . .env && set +a && venv/bin/uvicorn src.main:app --reload --host 0.0.0.0 --port $${PORT:-8000}
 
 # ==============================================================================
 # Frontend commands
@@ -37,7 +37,7 @@ frontend-install:
 	cd frontend && pnpm install
 
 frontend-dev:
-	cd frontend && pnpm dev
+	cd frontend && set -a && [ -f .env.local ] && . .env.local && set +a && pnpm dev --port $${PORT:-3000}
 
 frontend-build:
 	cd frontend && pnpm build
