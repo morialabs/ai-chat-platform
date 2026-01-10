@@ -12,6 +12,12 @@ from src.agent.client import AgentRunner, StreamEvent
 
 router = APIRouter()
 
+SSE_HEADERS = {
+    "Cache-Control": "no-cache",
+    "Connection": "keep-alive",
+    "X-Accel-Buffering": "no",
+}
+
 
 class ChatRequest(BaseModel):
     """Request body for chat endpoint."""
@@ -72,11 +78,7 @@ async def chat(request: ChatRequest) -> StreamingResponse:
     return StreamingResponse(
         stream_agent_response(request.message),
         media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
+        headers=SSE_HEADERS,
     )
 
 
@@ -95,14 +97,9 @@ async def respond(request: UserResponse) -> StreamingResponse:
     if not request.session_id:
         raise HTTPException(status_code=400, detail="Session ID is required")
 
-    # For now, treat user response as a new message
     # TODO: Implement proper session management with ClaudeSDKClient
     return StreamingResponse(
         stream_agent_response(request.response),
         media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
+        headers=SSE_HEADERS,
     )

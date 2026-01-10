@@ -9,6 +9,34 @@ import {
 import { ReactNode, useCallback } from "react";
 import type { StreamEvent, UserPrompt } from "@/lib/types";
 
+interface ToolCallState {
+  toolCallId: string;
+  toolName: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  args: any;
+  argsText: string;
+  result?: unknown;
+  isError?: boolean;
+}
+
+function buildContent(
+  text: string,
+  toolCalls: Map<string, ToolCallState>
+): ChatModelRunResult["content"] {
+  const textPart = text ? [{ type: "text" as const, text }] : [];
+  const toolCallParts = Array.from(toolCalls.values()).map((tc) => ({
+    type: "tool-call" as const,
+    toolCallId: tc.toolCallId,
+    toolName: tc.toolName,
+    args: tc.args,
+    argsText: tc.argsText,
+    result: tc.result,
+    isError: tc.isError,
+  }));
+
+  return [...textPart, ...toolCallParts];
+}
+
 const createChatAdapter = (
   sessionId: string | null,
   onSessionId: (id: string) => void,
@@ -44,18 +72,7 @@ const createChatAdapter = (
       const decoder = new TextDecoder();
       let buffer = "";
       let accumulatedText = "";
-      const toolCalls: Map<
-        string,
-        {
-          toolCallId: string;
-          toolName: string;
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          args: any;
-          argsText: string;
-          result?: unknown;
-          isError?: boolean;
-        }
-      > = new Map();
+      const toolCalls = new Map<string, ToolCallState>();
 
       while (true) {
         const { done, value } = await reader.read();
@@ -89,22 +106,7 @@ const createChatAdapter = (
                       args: (event.tool_input as Record<string, unknown>) || {},
                       argsText: JSON.stringify(event.tool_input || {}),
                     });
-                    yield {
-                      content: [
-                        ...(accumulatedText
-                          ? [{ type: "text" as const, text: accumulatedText }]
-                          : []),
-                        ...Array.from(toolCalls.values()).map((tc) => ({
-                          type: "tool-call" as const,
-                          toolCallId: tc.toolCallId,
-                          toolName: tc.toolName,
-                          args: tc.args,
-                          argsText: tc.argsText,
-                          result: tc.result,
-                          isError: tc.isError,
-                        })),
-                      ],
-                    };
+                    yield { content: buildContent(accumulatedText, toolCalls) };
                   }
                   break;
 
@@ -114,22 +116,7 @@ const createChatAdapter = (
                     if (tc) {
                       tc.result = event.content;
                       tc.isError = event.is_error;
-                      yield {
-                        content: [
-                          ...(accumulatedText
-                            ? [{ type: "text" as const, text: accumulatedText }]
-                            : []),
-                          ...Array.from(toolCalls.values()).map((t) => ({
-                            type: "tool-call" as const,
-                            toolCallId: t.toolCallId,
-                            toolName: t.toolName,
-                            args: t.args,
-                            argsText: t.argsText,
-                            result: t.result,
-                            isError: t.isError,
-                          })),
-                        ],
-                      };
+                      yield { content: buildContent(accumulatedText, toolCalls) };
                     }
                   }
                   break;
@@ -158,22 +145,8 @@ const createChatAdapter = (
         }
       }
 
-      // Final yield with complete status
       yield {
-        content: [
-          ...(accumulatedText
-            ? [{ type: "text" as const, text: accumulatedText }]
-            : []),
-          ...Array.from(toolCalls.values()).map((tc) => ({
-            type: "tool-call" as const,
-            toolCallId: tc.toolCallId,
-            toolName: tc.toolName,
-            args: tc.args,
-            argsText: tc.argsText,
-            result: tc.result,
-            isError: tc.isError,
-          })),
-        ],
+        content: buildContent(accumulatedText, toolCalls),
         status: { type: "complete", reason: "stop" },
       };
     },
