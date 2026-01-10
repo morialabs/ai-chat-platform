@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     # Workspace
     workspace_dir: Path = Path.cwd()
 
+    # CORS
+    allowed_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
+
     @property
     def is_configured(self) -> bool:
         """Check if the API key is configured."""
