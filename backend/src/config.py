@@ -26,8 +26,17 @@ class Settings(BaseSettings):
     # Workspace
     workspace_dir: Path = Path.cwd()
 
-    # CORS
-    allowed_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
+    # Server ports
+    port: int = 8000
+    frontend_port: int = 3000
+
+    @property
+    def allowed_origins(self) -> list[str]:
+        """Dynamic CORS origins based on frontend_port."""
+        return [
+            f"http://localhost:{self.frontend_port}",
+            f"http://127.0.0.1:{self.frontend_port}",
+        ]
 
     @property
     def is_configured(self) -> bool:

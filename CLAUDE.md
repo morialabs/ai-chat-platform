@@ -84,11 +84,11 @@ make install              # Install backend dependencies
 make lint                 # Run Python linting
 make test                 # Run backend tests
 make type-check           # Run mypy
-make backend-dev          # Start backend server (port 8000)
+make backend-dev          # Start backend server (uses PORT from .env, default 8000)
 
 # === Frontend ===
 make frontend-install     # Install frontend dependencies (pnpm)
-make frontend-dev         # Start frontend dev server (port 3000)
+make frontend-dev         # Start frontend dev server (uses PORT from .env.local, default 3000)
 make frontend-build       # Build frontend for production
 make frontend-lint        # Run ESLint
 
@@ -122,6 +122,31 @@ cd backend && venv/bin/python -m src.cli "Your prompt here"
 4. **Open the chat interface:**
    Navigate to http://localhost:3000/chat
 
+### Running Multiple Instances (Git Worktrees)
+
+To run multiple instances on the same machine (e.g., for different git worktrees):
+
+1. **Configure custom ports in each worktree:**
+
+   Backend (`backend/.env`):
+   ```bash
+   ANTHROPIC_API_KEY=sk-ant-...
+   PORT=8001
+   FRONTEND_PORT=3001
+   ```
+
+   Frontend (`frontend/.env.local`):
+   ```bash
+   PORT=3001
+   BACKEND_URL=http://localhost:8001
+   ```
+
+2. **Start servers normally** - they will use the configured ports:
+   ```bash
+   make backend-dev   # Uses PORT from .env
+   make frontend-dev  # Uses PORT from .env.local
+   ```
+
 ## Code Style
 
 - Python: ruff for linting and formatting
@@ -150,10 +175,12 @@ See `docs/01-architecture.md` for full architecture documentation.
 - `ANTHROPIC_API_KEY` - Your Anthropic API key (required)
 - `MODEL` - Claude model (default: claude-opus-4-5-20251101)
 - `MAX_TOKENS` - Maximum tokens (default: 8192)
-- `ALLOWED_ORIGINS` - CORS origins (default: http://localhost:3000)
+- `PORT` - Backend server port (default: 8000)
+- `FRONTEND_PORT` - Frontend port for CORS (default: 3000)
 
 **Frontend (.env.local):**
-- `NEXT_PUBLIC_API_URL` - Backend URL (default: http://localhost:8000)
+- `PORT` - Frontend dev server port (default: 3000)
+- `BACKEND_URL` - Backend API URL (default: http://localhost:8000)
 
 ## Testing
 
