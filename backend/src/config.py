@@ -20,7 +20,7 @@ class Settings(BaseSettings):
 
     # Claude Agent SDK
     anthropic_api_key: str = ""
-    model: str = "claude-sonnet-4-20250514"
+    model: str = "claude-opus-4-5-20251101"
     max_tokens: int = 8192
 
     # Workspace

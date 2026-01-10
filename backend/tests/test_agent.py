@@ -21,7 +21,7 @@ def test_agent_runner_with_custom_options() -> None:
 def test_default_options_valid() -> None:
     """Verify default options have expected values."""
     options = get_default_options()
-    assert options.permission_mode == "acceptEdits"
+    assert options.permission_mode == "bypassPermissions"
     assert "Read" in options.allowed_tools
     assert "Write" in options.allowed_tools
     assert "Bash" in options.allowed_tools

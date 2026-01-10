@@ -9,7 +9,7 @@ from src.tools.server import create_tools_server
 
 
 def get_default_options(
-    *, include_hooks: bool = True, include_custom_tools: bool = True
+    *, include_hooks: bool = False, include_custom_tools: bool = False
 ) -> ClaudeCodeOptions:
     """Create default agent options.
 
@@ -46,8 +46,8 @@ def get_default_options(
         # Core settings
         model=settings.model,
         cwd=str(settings.workspace_dir),
-        # Permission mode - acceptEdits allows file operations without prompting
-        permission_mode="acceptEdits",
+        # Permission mode - bypassPermissions allows all tools without prompting
+        permission_mode="bypassPermissions",
         # Built-in tools to allow
         allowed_tools=allowed_tools,
         # MCP servers for custom tools
