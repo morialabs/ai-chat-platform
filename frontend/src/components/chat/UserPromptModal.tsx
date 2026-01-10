@@ -9,6 +9,14 @@ interface UserPromptModalProps {
   onCancel: () => void;
 }
 
+function getOptionClassName(isSelected: boolean): string {
+  const baseClass = "w-full p-3 text-left border rounded-lg transition-colors";
+  if (isSelected) {
+    return `${baseClass} border-blue-500 bg-blue-50`;
+  }
+  return `${baseClass} hover:bg-gray-50`;
+}
+
 export function UserPromptModal({
   prompt,
   onRespond,
@@ -64,28 +72,26 @@ export function UserPromptModal({
               <p className="text-gray-700 mb-3">{q.question}</p>
 
               <div className="space-y-2">
-                {q.options.map((opt, j) => (
-                  <button
-                    key={j}
-                    onClick={() =>
-                      q.multiSelect
-                        ? handleMultiSelect(q.question, opt.label)
-                        : handleSingleSelect(q.question, opt.label)
-                    }
-                    className={`w-full p-3 text-left border rounded-lg transition-colors ${
-                      q.multiSelect
-                        ? multiAnswers[q.question]?.includes(opt.label)
-                          ? "border-blue-500 bg-blue-50"
-                          : "hover:bg-gray-50"
-                        : answers[q.question] === opt.label
-                          ? "border-blue-500 bg-blue-50"
-                          : "hover:bg-gray-50"
-                    }`}
-                  >
-                    <div className="font-medium">{opt.label}</div>
-                    <div className="text-sm text-gray-500">{opt.description}</div>
-                  </button>
-                ))}
+                {q.options.map((opt, j) => {
+                  const isSelected = q.multiSelect
+                    ? multiAnswers[q.question]?.includes(opt.label) ?? false
+                    : answers[q.question] === opt.label;
+
+                  return (
+                    <button
+                      key={j}
+                      onClick={() =>
+                        q.multiSelect
+                          ? handleMultiSelect(q.question, opt.label)
+                          : handleSingleSelect(q.question, opt.label)
+                      }
+                      className={getOptionClassName(isSelected)}
+                    >
+                      <div className="font-medium">{opt.label}</div>
+                      <div className="text-sm text-gray-500">{opt.description}</div>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           ))}

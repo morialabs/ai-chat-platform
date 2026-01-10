@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { ChevronDown, ChevronRight, Loader2, Check, X } from "lucide-react";
+
+type ToolStatus = "pending" | "running" | "complete" | "error";
 
 interface ToolCallProps {
   toolCall: {
@@ -9,7 +11,7 @@ interface ToolCallProps {
     toolName: string;
     args?: Record<string, unknown>;
     result?: string;
-    status: "pending" | "running" | "complete" | "error";
+    status: ToolStatus;
   };
 }
 
@@ -27,16 +29,22 @@ const TOOL_ICONS: Record<string, string> = {
   Task: "🤖",
 };
 
+function getStatusIcon(status: ToolStatus): ReactNode {
+  switch (status) {
+    case "pending":
+      return <Loader2 className="w-4 h-4 animate-spin text-gray-400" />;
+    case "running":
+      return <Loader2 className="w-4 h-4 animate-spin text-blue-500" />;
+    case "complete":
+      return <Check className="w-4 h-4 text-green-500" />;
+    case "error":
+      return <X className="w-4 h-4 text-red-500" />;
+  }
+}
+
 export function ToolCallDisplay({ toolCall }: ToolCallProps) {
   const [expanded, setExpanded] = useState(false);
   const icon = TOOL_ICONS[toolCall.toolName] || "🔧";
-
-  const statusIcon = {
-    pending: <Loader2 className="w-4 h-4 animate-spin text-gray-400" />,
-    running: <Loader2 className="w-4 h-4 animate-spin text-blue-500" />,
-    complete: <Check className="w-4 h-4 text-green-500" />,
-    error: <X className="w-4 h-4 text-red-500" />,
-  }[toolCall.status];
 
   return (
     <div className="my-2 border rounded-lg overflow-hidden bg-gray-50">
@@ -52,7 +60,7 @@ export function ToolCallDisplay({ toolCall }: ToolCallProps) {
         <span className="text-lg">{icon}</span>
         <span className="font-mono text-sm">{toolCall.toolName}</span>
         <span className="flex-1" />
-        {statusIcon}
+        {getStatusIcon(toolCall.status)}
       </button>
 
       {expanded && (
