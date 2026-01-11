@@ -129,18 +129,6 @@ jobs:
       - name: Install Playwright browsers
         run: pnpm exec playwright install --with-deps chromium
         working-directory: frontend
-      - name: Start backend server
-        run: |
-          cd backend
-          uvicorn src.main:app --host 0.0.0.0 --port 8000 &
-          sleep 5
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-      - name: Start frontend server
-        run: |
-          cd frontend
-          pnpm dev &
-          sleep 10
       - name: Run E2E tests
         run: pnpm test:e2e
         working-directory: frontend

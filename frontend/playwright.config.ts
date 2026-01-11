@@ -36,7 +36,10 @@ export default defineConfig({
   // Configure both frontend and backend servers to start automatically
   webServer: [
     {
-      command: `cd ../backend && venv/bin/uvicorn src.main:app --host 0.0.0.0 --port ${backendPort}`,
+      // In CI, uvicorn is installed globally via pip; locally, it's in the venv
+      command: process.env.CI
+        ? `cd ../backend && uvicorn src.main:app --host 0.0.0.0 --port ${backendPort}`
+        : `cd ../backend && venv/bin/uvicorn src.main:app --host 0.0.0.0 --port ${backendPort}`,
       url: `http://localhost:${backendPort}/health`,
       reuseExistingServer: !process.env.CI,
       timeout: 30000,
