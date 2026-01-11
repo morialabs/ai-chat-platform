@@ -1,13 +1,23 @@
 """Chat API routes with SSE streaming and multi-turn session support.
 
-Implements Vercel AI SDK UI Message Stream Protocol for frontend compatibility.
-See: https://ai-sdk.dev/docs/ai-sdk-ui/stream-protocol
+Implements AI SDK Data Stream Protocol for frontend compatibility.
+See: https://ai-sdk.dev/docs/ai-sdk-ui/stream-protocol#data-stream-protocol
+
+Stream codes:
+- 0: text (string value)
+- 2: data (array value)
+- 3: error (string value)
+- 9: tool_call (object with toolCallId, toolName, args)
+- a: tool_result (object with toolCallId, result)
+- b: tool_call_streaming_start (object with toolCallId, toolName)
+- c: tool_call_delta (object with toolCallId, argsTextDelta)
+- d: finish_message (object with finishReason, usage)
+- e: finish_step (object with finishReason, usage, isContinued)
 """
 
 import json
 import uuid
 from collections.abc import AsyncIterator
-from dataclasses import asdict
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
@@ -21,175 +31,170 @@ router = APIRouter()
 
 
 def get_sse_headers(session_id: str | None = None) -> dict[str, str]:
-    """Get SSE headers including Vercel AI SDK protocol header."""
+    """Get SSE headers for Data Stream protocol."""
     headers = {
         "Cache-Control": "no-cache",
         "Connection": "keep-alive",
         "X-Accel-Buffering": "no",
-        "x-vercel-ai-ui-message-stream": "v1",
+        "Content-Type": "text/plain; charset=utf-8",
     }
     if session_id:
         headers["x-session-id"] = session_id
     return headers
 
 
-# Legacy headers for backward compatibility
-SSE_HEADERS = {
-    "Cache-Control": "no-cache",
-    "Connection": "keep-alive",
-    "X-Accel-Buffering": "no",
-}
-
 # Module-level singleton for agent manager
 _agent_manager: AgentManager | None = None
 
 
-class VercelStreamState:
-    """Tracks state for Vercel protocol conversion."""
+class DataStreamState:
+    """Tracks state for Data Stream protocol conversion."""
 
     def __init__(self) -> None:
-        self.text_id: str | None = None
-        self.text_started = False
         self.session_id: str | None = None
 
-    def generate_text_id(self) -> str:
-        """Generate a new text ID."""
-        self.text_id = f"text-{uuid.uuid4().hex[:8]}"
-        return self.text_id
+    def generate_tool_id(self) -> str:
+        """Generate a new tool call ID."""
+        return f"call-{uuid.uuid4().hex[:12]}"
 
 
-def convert_to_vercel_events(event: StreamEvent, state: VercelStreamState) -> list[dict[str, Any]]:
-    """Convert internal StreamEvent to Vercel UI Message Stream Protocol events.
+def format_data_stream_part(code: str, value: Any) -> str:
+    """Format a single Data Stream part.
+
+    Args:
+        code: Single character code (0, 2, 3, 9, a, b, c, d, e).
+        value: JSON-serializable value.
+
+    Returns:
+        Formatted string like "0:\"Hello\"\n".
+    """
+    return f"{code}:{json.dumps(value)}\n"
+
+
+def convert_to_data_stream(event: StreamEvent, state: DataStreamState) -> list[str]:
+    """Convert internal StreamEvent to AI SDK Data Stream Protocol parts.
 
     Args:
         event: The internal StreamEvent from the agent.
-        state: Mutable state tracking text IDs and session.
+        state: Mutable state tracking session info.
 
     Returns:
-        List of Vercel protocol event dictionaries.
+        List of Data Stream formatted strings.
     """
-    events: list[dict[str, Any]] = []
+    parts: list[str] = []
 
     # Track session_id
     if event.session_id:
         state.session_id = event.session_id
 
     if event.type == "text":
-        # Start text block if not started
-        if not state.text_started:
-            text_id = state.generate_text_id()
-            events.append({"type": "text-start", "id": text_id})
-            state.text_started = True
-
-        # Emit text delta
-        if event.text and state.text_id:
-            events.append(
-                {
-                    "type": "text-delta",
-                    "id": state.text_id,
-                    "delta": event.text,
-                }
-            )
+        # Text content: code 0
+        if event.text:
+            parts.append(format_data_stream_part("0", event.text))
 
     elif event.type == "tool_start":
-        # End any ongoing text block before tool
-        if state.text_started and state.text_id:
-            events.append({"type": "text-end", "id": state.text_id})
-            state.text_started = False
-
-        # Emit tool input events
-        events.append(
-            {
-                "type": "tool-input-start",
-                "toolCallId": event.tool_id,
-                "toolName": event.tool_name,
-            }
+        # Tool call streaming start: code b
+        parts.append(
+            format_data_stream_part(
+                "b",
+                {
+                    "toolCallId": event.tool_id,
+                    "toolName": event.tool_name,
+                },
+            )
         )
-        events.append(
-            {
-                "type": "tool-input-available",
-                "toolCallId": event.tool_id,
-                "toolName": event.tool_name,
-                "input": event.tool_input or {},
-            }
+        # Full tool call with args: code 9
+        parts.append(
+            format_data_stream_part(
+                "9",
+                {
+                    "toolCallId": event.tool_id,
+                    "toolName": event.tool_name,
+                    "args": event.tool_input or {},
+                },
+            )
         )
 
     elif event.type == "user_input_required":
-        # End any ongoing text block before tool
-        if state.text_started and state.text_id:
-            events.append({"type": "text-end", "id": state.text_id})
-            state.text_started = False
-
-        # Emit as AskUserQuestion tool (no result yet - waiting for user)
-        events.append(
-            {
-                "type": "tool-input-start",
-                "toolCallId": event.tool_id,
-                "toolName": "AskUserQuestion",
-            }
-        )
-        events.append(
-            {
-                "type": "tool-input-available",
-                "toolCallId": event.tool_id,
-                "toolName": "AskUserQuestion",
-                "input": {
-                    "questions": event.questions or [],
-                    **(event.tool_input or {}),
+        # AskUserQuestion as a tool call
+        parts.append(
+            format_data_stream_part(
+                "b",
+                {
+                    "toolCallId": event.tool_id,
+                    "toolName": "AskUserQuestion",
                 },
-            }
+            )
+        )
+        parts.append(
+            format_data_stream_part(
+                "9",
+                {
+                    "toolCallId": event.tool_id,
+                    "toolName": "AskUserQuestion",
+                    "args": {
+                        "questions": event.questions or [],
+                        **(event.tool_input or {}),
+                    },
+                },
+            )
         )
 
     elif event.type == "tool_result":
-        # Emit tool output
-        events.append(
-            {
-                "type": "tool-output-available",
-                "toolCallId": event.tool_id,
-                "output": {
-                    "result": event.tool_result,
-                    "isError": event.is_error,
+        # Tool result: code a
+        parts.append(
+            format_data_stream_part(
+                "a",
+                {
+                    "toolCallId": event.tool_id,
+                    "result": event.tool_result
+                    if not event.is_error
+                    else {"error": event.tool_result},
                 },
-            }
+            )
         )
 
     elif event.type == "done":
-        # End any ongoing text block
-        if state.text_started and state.text_id:
-            events.append({"type": "text-end", "id": state.text_id})
-            state.text_started = False
-
-        # Emit finish with metadata
-        events.append(
-            {
-                "type": "finish",
-                "metadata": {
-                    "session_id": event.session_id,
-                    "cost": event.cost,
+        # Finish step: code e
+        parts.append(
+            format_data_stream_part(
+                "e",
+                {
+                    "finishReason": "stop",
+                    "usage": {"promptTokens": 0, "completionTokens": 0},
+                    "isContinued": False,
                 },
-            }
+            )
         )
+        # Finish message: code d (includes session metadata)
+        parts.append(
+            format_data_stream_part(
+                "d",
+                {
+                    "finishReason": "stop",
+                    "usage": {"promptTokens": 0, "completionTokens": 0},
+                },
+            )
+        )
+        # Send session info as data: code 2
+        if state.session_id:
+            parts.append(
+                format_data_stream_part(
+                    "2",
+                    [
+                        {
+                            "session_id": state.session_id,
+                            "cost": event.cost,
+                        }
+                    ],
+                )
+            )
 
     elif event.type == "error":
-        # End any ongoing text block
-        if state.text_started and state.text_id:
-            events.append({"type": "text-end", "id": state.text_id})
-            state.text_started = False
+        # Error: code 3
+        parts.append(format_data_stream_part("3", event.text or "Unknown error"))
 
-        # Emit error
-        events.append(
-            {
-                "type": "error",
-                "errorText": event.text or "Unknown error",
-            }
-        )
-
-    return events
-
-
-def vercel_event_to_sse(event: dict[str, Any]) -> str:
-    """Convert a Vercel protocol event dict to SSE format."""
-    return f"data: {json.dumps(event)}\n\n"
+    return parts
 
 
 def get_agent_manager() -> AgentManager:
@@ -243,69 +248,39 @@ class UserResponse(BaseModel):
     response: str
 
 
-def event_to_sse(event: StreamEvent) -> str:
-    """Convert a StreamEvent to SSE format."""
-    data = {k: v for k, v in asdict(event).items() if v is not None}
-    return f"data: {json.dumps(data)}\n\n"
-
-
-async def stream_agent_response_vercel(
+async def stream_agent_response_data_stream(
     message: str, session_id: str | None = None
 ) -> AsyncIterator[tuple[str, str | None]]:
-    """Stream agent response as Vercel protocol SSE events.
+    """Stream agent response as AI SDK Data Stream protocol.
 
     Args:
         message: The user's message.
         session_id: Optional session ID to continue an existing conversation.
 
     Yields:
-        Tuples of (SSE formatted string, session_id or None).
+        Tuples of (Data Stream formatted string, session_id or None).
     """
     manager = get_agent_manager()
-    state = VercelStreamState()
+    state = DataStreamState()
 
     try:
         async for event in manager.stream_response(message, session_id):
-            vercel_events = convert_to_vercel_events(event, state)
-            for ve in vercel_events:
-                yield vercel_event_to_sse(ve), state.session_id
+            parts = convert_to_data_stream(event, state)
+            for part in parts:
+                yield part, state.session_id
     except Exception as e:
         error_event = StreamEvent(type="error", text=str(e), is_error=True)
-        vercel_events = convert_to_vercel_events(error_event, state)
-        for ve in vercel_events:
-            yield vercel_event_to_sse(ve), state.session_id
-
-    yield "data: [DONE]\n\n", state.session_id
-
-
-async def stream_agent_response(message: str, session_id: str | None = None) -> AsyncIterator[str]:
-    """Stream agent response as SSE events (legacy format).
-
-    Args:
-        message: The user's message.
-        session_id: Optional session ID to continue an existing conversation.
-
-    Yields:
-        SSE formatted strings.
-    """
-    manager = get_agent_manager()
-
-    try:
-        async for event in manager.stream_response(message, session_id):
-            yield event_to_sse(event)
-    except Exception as e:
-        error_event = StreamEvent(type="error", text=str(e), is_error=True)
-        yield event_to_sse(error_event)
-
-    yield "data: [DONE]\n\n"
+        parts = convert_to_data_stream(error_event, state)
+        for part in parts:
+            yield part, state.session_id
 
 
 @router.post("")
 async def chat(request: ChatRequest) -> StreamingResponse:
-    """Main chat endpoint with SSE streaming using Vercel AI SDK protocol.
+    """Main chat endpoint with streaming using AI SDK Data Stream protocol.
 
-    Accepts a message and streams back the agent's response as Server-Sent Events
-    following the Vercel UI Message Stream Protocol for frontend compatibility.
+    Accepts a message and streams back the agent's response following
+    the AI SDK Data Stream Protocol for frontend compatibility.
     If a session_id is provided, continues the existing conversation with full
     context preserved. Otherwise, starts a new session.
 
@@ -313,13 +288,13 @@ async def chat(request: ChatRequest) -> StreamingResponse:
         request: The chat request containing the message and optional session_id.
 
     Returns:
-        StreamingResponse with Vercel protocol SSE events.
+        StreamingResponse with Data Stream protocol events.
     """
     # Extract user message from either Vercel format or legacy format
     try:
         user_message = request.get_user_message()
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from None
 
     if not user_message.strip():
         raise HTTPException(status_code=400, detail="Message cannot be empty")
@@ -329,27 +304,27 @@ async def chat(request: ChatRequest) -> StreamingResponse:
 
     async def generate() -> AsyncIterator[str]:
         nonlocal captured_session_id
-        async for sse_chunk, session_id in stream_agent_response_vercel(
+        async for chunk, session_id in stream_agent_response_data_stream(
             user_message, request.session_id
         ):
             if session_id and not captured_session_id:
                 captured_session_id = session_id
-            yield sse_chunk
+            yield chunk
 
     # Use request session_id for header if available
-    # New sessions will have session_id in finish event metadata
+    # New sessions will have session_id in data event
     headers = get_sse_headers(request.session_id)
 
     return StreamingResponse(
         generate(),
-        media_type="text/event-stream",
+        media_type="text/plain; charset=utf-8",
         headers=headers,
     )
 
 
 @router.post("/respond")
 async def respond(request: UserResponse) -> StreamingResponse:
-    """Continue conversation with user's response using Vercel protocol.
+    """Continue conversation with user's response using Data Stream protocol.
 
     Used when the agent asks for user input via AskUserQuestion tool.
     The session must exist and be in the WAITING_INPUT state.
@@ -358,40 +333,38 @@ async def respond(request: UserResponse) -> StreamingResponse:
         request: The user response containing session_id and response.
 
     Returns:
-        StreamingResponse with Vercel protocol SSE events.
+        StreamingResponse with Data Stream protocol events.
     """
     if not request.session_id:
         raise HTTPException(status_code=400, detail="Session ID is required")
 
     manager = get_agent_manager()
-    state = VercelStreamState()
+    state = DataStreamState()
 
     async def generate() -> AsyncIterator[str]:
         try:
             async for event in manager.respond_to_prompt(request.session_id, request.response):
-                vercel_events = convert_to_vercel_events(event, state)
-                for ve in vercel_events:
-                    yield vercel_event_to_sse(ve)
+                parts = convert_to_data_stream(event, state)
+                for part in parts:
+                    yield part
         except SessionNotFoundError:
             error_event = StreamEvent(
                 type="error",
                 text="Session not found or expired",
                 is_error=True,
             )
-            vercel_events = convert_to_vercel_events(error_event, state)
-            for ve in vercel_events:
-                yield vercel_event_to_sse(ve)
+            parts = convert_to_data_stream(error_event, state)
+            for part in parts:
+                yield part
         except Exception as e:
             error_event = StreamEvent(type="error", text=str(e), is_error=True)
-            vercel_events = convert_to_vercel_events(error_event, state)
-            for ve in vercel_events:
-                yield vercel_event_to_sse(ve)
-
-        yield "data: [DONE]\n\n"
+            parts = convert_to_data_stream(error_event, state)
+            for part in parts:
+                yield part
 
     return StreamingResponse(
         generate(),
-        media_type="text/event-stream",
+        media_type="text/plain; charset=utf-8",
         headers=get_sse_headers(request.session_id),
     )
 

@@ -122,10 +122,10 @@ class TestSSEHeaders:
         headers = get_sse_headers()
         assert headers["X-Accel-Buffering"] == "no"
 
-    def test_vercel_protocol_header(self) -> None:
-        """x-vercel-ai-ui-message-stream: v1 header set."""
+    def test_content_type_header(self) -> None:
+        """Content-Type header is text/plain; charset=utf-8 for Data Stream."""
         headers = get_sse_headers()
-        assert headers["x-vercel-ai-ui-message-stream"] == "v1"
+        assert headers["Content-Type"] == "text/plain; charset=utf-8"
 
     def test_session_header_when_provided(self) -> None:
         """x-session-id header set when session_id provided."""
@@ -163,8 +163,8 @@ class TestChatEndpoint:
         response = client.post("/api/chat", json={})
         assert response.status_code == 400
 
-    def test_content_type_is_event_stream(self, client: TestClient) -> None:
-        """Content-Type is text/event-stream."""
+    def test_content_type_is_text_plain(self, client: TestClient) -> None:
+        """Content-Type is text/plain for Data Stream protocol."""
         with patch("src.api.routes.chat.get_agent_manager") as mock_manager:
             mock_instance = AsyncMock()
             mock_instance.stream_response = AsyncMock(return_value=async_empty_generator())
@@ -174,20 +174,7 @@ class TestChatEndpoint:
                 "/api/chat",
                 json={"messages": [{"role": "user", "content": "Hello"}]},
             )
-            assert "text/event-stream" in response.headers["content-type"]
-
-    def test_vercel_header_present(self, client: TestClient) -> None:
-        """x-vercel-ai-ui-message-stream: v1 header set."""
-        with patch("src.api.routes.chat.get_agent_manager") as mock_manager:
-            mock_instance = AsyncMock()
-            mock_instance.stream_response = AsyncMock(return_value=async_empty_generator())
-            mock_manager.return_value = mock_instance
-
-            response = client.post(
-                "/api/chat",
-                json={"messages": [{"role": "user", "content": "Hello"}]},
-            )
-            assert response.headers.get("x-vercel-ai-ui-message-stream") == "v1"
+            assert "text/plain" in response.headers["content-type"]
 
     def test_session_header_when_provided(self, client: TestClient) -> None:
         """x-session-id header set when session_id in request."""
