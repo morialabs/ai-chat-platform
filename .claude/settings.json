@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(pnpm:*)",
+      "Bash(make:*)",
+      "Bash(make test:*)",
+      "Bash(make type-check:*)",
+      "Bash(make lint:*)",
+      "Bash(make frontend-lint:*)",
+      "Bash(claude plugin:*)"
+    ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "Check if code files were edited in this turn. If Edit or Write tools were used on code files (.py, .ts, .tsx, .js, .jsx, .go, .rs, etc.) AND the code-simplifier agent has NOT already been run, respond with {\"ok\": false, \"reason\": \"Run code-simplifier agent on the modified files to ensure clarity and maintainability\"}. If no code was edited, or code-simplifier already ran, or only non-code files were modified, respond with {\"ok\": true}."
+          }
+        ]
+      }
+    ]
+  }
+}
