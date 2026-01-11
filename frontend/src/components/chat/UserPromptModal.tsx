@@ -10,11 +10,11 @@ interface UserPromptModalProps {
 }
 
 function getOptionClassName(isSelected: boolean): string {
-  const baseClass = "w-full p-3 text-left border rounded-lg transition-colors";
+  const baseClass = "w-full p-3 text-left border rounded-lg transition-colors dark:border-gray-600";
   if (isSelected) {
-    return `${baseClass} border-blue-500 bg-blue-50`;
+    return `${baseClass} border-blue-500 bg-blue-50 dark:bg-blue-900/30`;
   }
-  return `${baseClass} hover:bg-gray-50`;
+  return `${baseClass} hover:bg-gray-50 dark:hover:bg-gray-800`;
 }
 
 export function UserPromptModal({
@@ -58,18 +58,18 @@ export function UserPromptModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+      <div className="bg-white dark:bg-gray-900 dark:text-gray-100 rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
         <div className="p-6">
           <h2 className="text-lg font-semibold mb-4">Input Required</h2>
 
           {prompt.questions.map((q, i) => (
             <div key={i} className="mb-6">
               <div className="flex items-center gap-2 mb-2">
-                <span className="px-2 py-1 bg-gray-100 rounded text-xs font-medium">
+                <span className="px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded text-xs font-medium">
                   {q.header}
                 </span>
               </div>
-              <p className="text-gray-700 mb-3">{q.question}</p>
+              <p className="text-gray-700 dark:text-gray-200 mb-3">{q.question}</p>
 
               <div className="space-y-2">
                 {q.options.map((opt, j) => {
@@ -88,7 +88,7 @@ export function UserPromptModal({
                       className={getOptionClassName(isSelected)}
                     >
                       <div className="font-medium">{opt.label}</div>
-                      <div className="text-sm text-gray-500">{opt.description}</div>
+                      <div className="text-sm text-gray-500 dark:text-gray-400">{opt.description}</div>
                     </button>
                   );
                 })}
@@ -99,7 +99,7 @@ export function UserPromptModal({
           <div className="flex gap-3 mt-6">
             <button
               onClick={onCancel}
-              className="flex-1 px-4 py-2 border rounded-lg hover:bg-gray-50"
+              className="flex-1 px-4 py-2 border rounded-lg hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-800"
             >
               Cancel
             </button>
