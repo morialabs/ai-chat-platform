@@ -199,12 +199,35 @@ See `docs/01-architecture.md` for full architecture documentation.
 make test
 ```
 
-**E2E tests (requires both servers + API key):**
+### E2E Tests
+
+**Canonical command to run E2E tests:**
 ```bash
 make e2e
 ```
 
-Note: E2E tests make real API calls and incur costs (~$0.01-0.10 per test).
+This is the standard way to run E2E tests both locally and in CI. The same command is used in the GitHub Actions workflow.
+
+**How it works:**
+- Playwright automatically starts both backend and frontend servers
+- No need to manually start servers before running tests
+- Servers are stopped automatically when tests complete
+- Port configuration respects `PORT` and `BACKEND_PORT` env vars (defaults: 3000, 8000)
+
+**Prerequisites:**
+1. `ANTHROPIC_API_KEY` set in `backend/.env`
+2. Backend dependencies installed (`make install`)
+3. Frontend dependencies installed (`make frontend-install`)
+
+**Interactive mode (for debugging):**
+```bash
+make e2e-ui
+```
+
+**Notes:**
+- E2E tests make real API calls and incur costs (~$0.01-0.10 per test)
+- Tests run sequentially with extended timeouts (up to 90s) for API responses
+- Test file: `frontend/e2e/chat.spec.ts`
 
 ## Browser Verification Tools
 
