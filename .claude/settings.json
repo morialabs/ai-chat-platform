@@ -157,7 +157,9 @@
       "WebFetch(domain:fastapi.tiangolo.com)",
       "WebFetch(domain:docs.anthropic.com)",
       "WebFetch(domain:code.claude.com)",
-      "WebFetch(domain:stackoverflow.com)"
+      "WebFetch(domain:stackoverflow.com)",
+      "WebFetch(domain:www.assistant-ui.com)",
+      "Bash(venv/bin/python:*)"
     ],
     "deny": [
       "Bash(sudo:*)",
