@@ -124,7 +124,12 @@ const createChatAdapter = (
                   break;
 
                 case "user_input_required":
-                  onUserInputRequired(event as unknown as UserPrompt);
+                  // Extract questions from the event (they can be at top level or in tool_input)
+                  const questions =
+                    event.questions ||
+                    (event.tool_input as { questions?: UserPrompt["questions"] })?.questions ||
+                    [];
+                  onUserInputRequired({ questions });
                   break;
 
                 case "done":

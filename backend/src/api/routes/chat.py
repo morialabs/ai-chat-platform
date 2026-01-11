@@ -51,7 +51,9 @@ def event_to_sse(event: StreamEvent) -> str:
     return f"data: {json.dumps(data)}\n\n"
 
 
-async def stream_agent_response(message: str, session_id: str | None = None) -> AsyncIterator[str]:
+async def stream_agent_response(
+    message: str, session_id: str | None = None
+) -> AsyncIterator[str]:
     """Stream agent response as SSE events.
 
     Args:
