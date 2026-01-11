@@ -1,4 +1,4 @@
-"""Chat API routes with SSE streaming."""
+"""Chat API routes with SSE streaming and session support."""
 
 import json
 from collections.abc import AsyncIterator
@@ -39,11 +39,14 @@ def event_to_sse(event: StreamEvent) -> str:
     return f"data: {json.dumps(data)}\n\n"
 
 
-async def stream_agent_response(message: str) -> AsyncIterator[str]:
+async def stream_agent_response(
+    message: str, session_id: str | None = None
+) -> AsyncIterator[str]:
     """Stream agent response as SSE events.
 
     Args:
         message: The user's message.
+        session_id: Optional session ID for multi-turn conversations.
 
     Yields:
         SSE formatted strings.
@@ -51,7 +54,31 @@ async def stream_agent_response(message: str) -> AsyncIterator[str]:
     runner = AgentRunner()
 
     try:
-        async for event in runner.run(message):
+        async for event in runner.run(message, session_id=session_id):
+            yield event_to_sse(event)
+    except Exception as e:
+        error_event = StreamEvent(type="error", text=str(e), is_error=True)
+        yield event_to_sse(error_event)
+
+    yield "data: [DONE]\n\n"
+
+
+async def stream_user_response(
+    session_id: str, response: str
+) -> AsyncIterator[str]:
+    """Stream agent response after user provides input.
+
+    Args:
+        session_id: The session ID to resume.
+        response: The user's response.
+
+    Yields:
+        SSE formatted strings.
+    """
+    runner = AgentRunner()
+
+    try:
+        async for event in runner.respond_to_user_prompt(session_id, response):
             yield event_to_sse(event)
     except Exception as e:
         error_event = StreamEvent(type="error", text=str(e), is_error=True)
@@ -65,6 +92,7 @@ async def chat(request: ChatRequest) -> StreamingResponse:
     """Main chat endpoint with SSE streaming.
 
     Accepts a message and streams back the agent's response as Server-Sent Events.
+    Pass session_id for multi-turn conversations.
 
     Args:
         request: The chat request containing the message and optional session_id.
@@ -76,7 +104,7 @@ async def chat(request: ChatRequest) -> StreamingResponse:
         raise HTTPException(status_code=400, detail="Message cannot be empty")
 
     return StreamingResponse(
-        stream_agent_response(request.message),
+        stream_agent_response(request.message, request.session_id),
         media_type="text/event-stream",
         headers=SSE_HEADERS,
     )
@@ -97,9 +125,8 @@ async def respond(request: UserResponse) -> StreamingResponse:
     if not request.session_id:
         raise HTTPException(status_code=400, detail="Session ID is required")
 
-    # TODO: Implement proper session management with ClaudeSDKClient
     return StreamingResponse(
-        stream_agent_response(request.response),
+        stream_user_response(request.session_id, request.response),
         media_type="text/event-stream",
         headers=SSE_HEADERS,
     )

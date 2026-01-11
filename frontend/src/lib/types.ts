@@ -23,6 +23,7 @@ export interface StreamEvent {
   result?: string;
   error?: string;
   cost?: number;
+  questions?: UserQuestion[];
 }
 
 /**
