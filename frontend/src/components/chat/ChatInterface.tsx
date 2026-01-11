@@ -10,6 +10,7 @@ import {
 import { ChatProvider } from "./ChatProvider";
 import { UserPromptModal } from "./UserPromptModal";
 import { ToolFallback } from "./ToolUI";
+import { MarkdownText } from "@/components/assistant-ui/markdown-text";
 import type { UserPrompt } from "@/lib/types";
 
 function ThreadMessages() {
@@ -28,6 +29,7 @@ function ThreadMessages() {
             <div className="bg-gray-100 dark:bg-gray-800 dark:text-gray-100 rounded-lg px-4 py-2 max-w-[80%]">
               <MessagePrimitive.Parts
                 components={{
+                  Text: MarkdownText,
                   tools: { Fallback: ToolFallback },
                 }}
               />
