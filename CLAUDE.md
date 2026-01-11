@@ -147,6 +147,12 @@ To run multiple instances on the same machine (e.g., for different git worktrees
    make frontend-dev  # Uses PORT from .env.local
    ```
 
+## Git Workflow
+
+- **Never push directly to main.** Always create a feature branch and open a PR.
+- Branch naming: `feat/description`, `fix/description`, `docs/description`, `refactor/description`
+- All changes to main must go through a pull request.
+
 ## Code Style
 
 - Python: ruff for linting and formatting
