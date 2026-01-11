@@ -154,6 +154,10 @@ To run multiple instances on the same machine (e.g., for different git worktrees
 - Type hints required (mypy strict mode for Python)
 - Async/await for all agent interactions
 
+## Code Quality
+
+After editing code files (.py, .ts, .tsx, .js, .jsx, etc.), always run the code-simplifier agent on the modified files before completing the task. Use the Task tool with `subagent_type: "code-simplifier"` to ensure clarity and maintainability.
+
 ## Architecture
 
 See `docs/01-architecture.md` for full architecture documentation.
