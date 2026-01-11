@@ -162,7 +162,7 @@ To run multiple instances on the same machine (e.g., for different git worktrees
 
 ## Code Quality
 
-After editing code files (.py, .ts, .tsx, .js, .jsx, etc.), always run the code-simplifier agent on the modified files before completing the task. Use the Task tool with `subagent_type: "code-simplifier"` to ensure clarity and maintainability.
+After editing code files (.py, .ts, .tsx, .js, .jsx, etc.), always run the code-simplifier agent on the modified files before completing the task. Use the Task tool with `subagent_type: "code-simplifier:code-simplifier"` to ensure clarity and maintainability.
 
 ## Architecture
 
