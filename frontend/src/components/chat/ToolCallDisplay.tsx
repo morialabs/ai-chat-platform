@@ -47,10 +47,10 @@ export function ToolCallDisplay({ toolCall }: ToolCallProps) {
   const icon = TOOL_ICONS[toolCall.toolName] || "🔧";
 
   return (
-    <div className="my-2 border rounded-lg overflow-hidden bg-gray-50">
+    <div className="my-2 border rounded-lg overflow-hidden bg-gray-50 dark:bg-gray-800 dark:border-gray-700">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full p-3 flex items-center gap-2 hover:bg-gray-100 transition-colors"
+        className="w-full p-3 flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-100 transition-colors"
       >
         {expanded ? (
           <ChevronDown className="w-4 h-4" />
@@ -64,13 +64,13 @@ export function ToolCallDisplay({ toolCall }: ToolCallProps) {
       </button>
 
       {expanded && (
-        <div className="p-3 border-t bg-white">
+        <div className="p-3 border-t bg-white dark:bg-gray-900 dark:border-gray-700">
           {toolCall.args && (
             <div className="mb-3">
-              <h4 className="text-xs font-semibold text-gray-500 mb-1">
+              <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">
                 Input
               </h4>
-              <pre className="text-xs bg-gray-100 p-2 rounded overflow-x-auto">
+              <pre className="text-xs bg-gray-100 dark:bg-gray-800 dark:text-gray-200 p-2 rounded overflow-x-auto">
                 {JSON.stringify(toolCall.args, null, 2)}
               </pre>
             </div>
@@ -78,10 +78,10 @@ export function ToolCallDisplay({ toolCall }: ToolCallProps) {
 
           {toolCall.result && (
             <div>
-              <h4 className="text-xs font-semibold text-gray-500 mb-1">
+              <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">
                 Result
               </h4>
-              <pre className="text-xs bg-gray-100 p-2 rounded overflow-x-auto max-h-48 overflow-y-auto">
+              <pre className="text-xs bg-gray-100 dark:bg-gray-800 dark:text-gray-200 p-2 rounded overflow-x-auto max-h-48 overflow-y-auto">
                 {typeof toolCall.result === "string"
                   ? toolCall.result
                   : JSON.stringify(toolCall.result, null, 2)}
