@@ -32,3 +32,11 @@ htmlcov/
 # OS
 .DS_Store
 Thumbs.db
+
+# Browser verification screenshots
+verification-*.png
+screenshot-*.png
+test-*.png
+
+# Claude skills dependencies
+.claude/skills/*/node_modules/

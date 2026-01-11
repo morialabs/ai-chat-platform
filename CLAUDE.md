@@ -206,5 +206,59 @@ make e2e
 
 Note: E2E tests make real API calls and incur costs (~$0.01-0.10 per test).
 
-**Manual testing with Claude in Chrome:**
-The Claude in Chrome extension is configured for this project. Use it for manual browser testing of the frontend UI when implementing or verifying features. Include manual browser verification steps in implementation plans where appropriate.
+## Browser Verification Tools
+
+This project has Playwright browser automation configured for Claude to perform manual verification of UI changes.
+
+### Available Tools
+
+**Playwright MCP Server** (`.mcp.json`):
+- Configured via `@playwright/mcp@latest`
+- Provides browser control tools: navigate, click, type, screenshot, wait
+- Uses accessibility tree (no vision models needed)
+
+**Playwright Skill** (`.claude/skills/playwright-skill/`):
+- For complex multi-step automation scenarios
+- Claude writes and executes custom Playwright scripts
+- Use for form flows, multi-page tests, custom assertions
+
+### Using /browser-test Command
+
+Execute manual test cases and get pass/fail results:
+
+```bash
+# With inline test cases
+/browser-test "chat page loads with welcome message" "input field accepts text"
+
+# From conversation context (extracts test cases mentioned earlier)
+/browser-test
+```
+
+**Output:** Structured report with pass/fail for each test case, screenshots as evidence.
+
+### Manual Browser Verification
+
+For ad-hoc verification, ask Claude directly:
+- "Navigate to the chat page and verify the welcome message is visible"
+- "Test the form submission flow and take screenshots"
+- "Check if the error message appears when submitting empty form"
+
+### When to Use Which Tool
+
+| Scenario | Tool |
+|----------|------|
+| Quick visual verification | Playwright MCP tools directly |
+| Multiple test cases with pass/fail | `/browser-test` command |
+| Complex multi-step scenarios | Playwright Skill |
+| Form flows, authentication tests | Playwright Skill |
+
+### Setup for New Team Members
+
+Browser tools should work automatically. If not:
+
+1. **Verify MCP server:** `claude mcp list` should show `playwright`
+2. **Check skill installation:** `.claude/skills/playwright-skill/` should exist
+3. **Re-run skill setup if needed:**
+   ```bash
+   cd .claude/skills/playwright-skill && npm run setup
+   ```
