@@ -1,34 +1,12 @@
 /**
  * Types for the AI Chat Platform frontend.
+ *
+ * Note: Most types are now provided by @ai-sdk/react.
+ * This file contains custom types specific to this application.
  */
 
 /**
- * Event types received from the backend SSE stream.
- */
-export interface StreamEvent {
-  type:
-    | "text"
-    | "tool_start"
-    | "tool_result"
-    | "user_input_required"
-    | "done"
-    | "error";
-  text?: string;
-  tool_id?: string;
-  tool_name?: string;
-  tool_input?: Record<string, unknown>;
-  content?: string;
-  is_error?: boolean;
-  session_id?: string;
-  result?: string;
-  tool_result?: string;
-  error?: string;
-  cost?: number;
-  questions?: UserQuestion[];
-}
-
-/**
- * Question for user input prompts.
+ * Question for user input prompts (AskUserQuestion tool).
  */
 export interface UserQuestion {
   question: string;
