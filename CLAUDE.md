@@ -195,3 +195,6 @@ make e2e
 ```
 
 Note: E2E tests make real API calls and incur costs (~$0.01-0.10 per test).
+
+**Manual testing with Claude in Chrome:**
+The Claude in Chrome extension is configured for this project. Use it for manual browser testing of the frontend UI when implementing or verifying features. Include manual browser verification steps in implementation plans where appropriate.
