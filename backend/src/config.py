@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     port: int = 8000
     frontend_port: int = 3000
 
+    # Session management
+    session_ttl_seconds: int = 3600  # 1 hour default
+    session_cleanup_interval_seconds: int = 300  # 5 minutes
+
     @property
     def allowed_origins(self) -> list[str]:
         """Dynamic CORS origins based on frontend_port."""

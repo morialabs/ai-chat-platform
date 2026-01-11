@@ -1,12 +1,14 @@
 "use client";
 
+import type { ReactNode } from "react";
+
 import {
   AssistantRuntimeProvider,
   useLocalRuntime,
   type ChatModelAdapter,
   type ChatModelRunResult,
 } from "@assistant-ui/react";
-import { useMemo, type ReactNode } from "react";
+import { useMemo } from "react";
 import type { StreamEvent } from "@/lib/types";
 
 interface ToolCallState {
@@ -114,7 +116,7 @@ const createChatAdapter = (
                   if (event.tool_id) {
                     const tc = toolCalls.get(event.tool_id);
                     if (tc) {
-                      tc.result = event.content;
+                      tc.result = event.tool_result;
                       tc.isError = event.is_error;
                       yield { content: buildContent(accumulatedText, toolCalls) };
                     }
@@ -128,6 +130,13 @@ const createChatAdapter = (
                   break;
 
                 case "error":
+                  // Clear session ID if session expired/not found
+                  if (
+                    event.text?.includes("Session not found") ||
+                    event.text?.includes("expired")
+                  ) {
+                    onSessionId("");
+                  }
                   throw new Error(event.error || event.text || "Unknown error");
               }
             } catch (e) {

@@ -1,10 +1,5 @@
-"""Claude Agent SDK client wrapper with session support.
+"""Claude Agent SDK client wrapper with multi-turn session support."""
 
-Uses the stateless query() function with conversation history stored server-side,
-since ClaudeSDKClient cannot be reused across different FastAPI request contexts.
-"""
-
-import json
 import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -17,12 +12,12 @@ from claude_code_sdk import (
     TextBlock,
     ToolResultBlock,
     ToolUseBlock,
-    UserMessage,
-    query,
 )
 
+from src.agent.exceptions import SessionNotFoundError
 from src.agent.options import get_default_options
-from src.agent.sessions import SessionManager, get_session_manager
+from src.config import settings
+from src.services.sessions import ManagedSession, SessionManager, SessionState
 
 logger = logging.getLogger(__name__)
 
@@ -36,176 +31,212 @@ class StreamEvent:
     tool_name: str | None = None
     tool_id: str | None = None
     tool_input: dict[str, Any] | None = None
-    content: str | None = None
+    tool_result: str | None = None
     session_id: str | None = None
     cost: float | None = None
     is_error: bool = False
-    questions: list[dict[str, Any]] | None = None
+    questions: list[dict[str, Any]] | None = None  # For AskUserQuestion
 
 
-def _serialize_content(content: str | list[dict[str, Any]] | None) -> str:
-    """Serialize tool result content to string."""
-    if content is None:
-        return ""
-    if isinstance(content, str):
-        return content
-    return json.dumps(content)
+class AgentManager:
+    """Manages Claude Agent SDK sessions with multi-turn support.
 
+    Uses ClaudeSDKClient to maintain conversation context across
+    multiple exchanges in the same session.
+    """
 
-class AgentRunner:
-    """Runs Claude agent queries with streaming output and session support."""
+    def __init__(self) -> None:
+        """Initialize the agent manager with a session manager."""
+        self.session_manager = SessionManager(ttl_seconds=settings.session_ttl_seconds)
 
-    def __init__(
+    async def stream_response(
         self,
+        prompt: str,
+        session_id: str | None = None,
         options: ClaudeCodeOptions | None = None,
-        session_manager: SessionManager | None = None,
-    ) -> None:
-        """Initialize the agent runner.
-
-        Args:
-            options: Custom options, or None to use defaults.
-            session_manager: Session manager, or None to use global.
-        """
-        self.options = options or get_default_options()
-        self.session_manager = session_manager or get_session_manager()
-
-    async def run(
-        self, prompt: str, session_id: str | None = None
     ) -> AsyncIterator[StreamEvent]:
-        """Run a query and yield streaming events.
+        """Stream response from existing or new session.
 
         Args:
-            prompt: The user's prompt.
-            session_id: Optional session ID for multi-turn conversations.
+            prompt: The user's message/prompt.
+            session_id: Optional existing session ID to continue.
+            options: Optional custom options (used only for new sessions).
 
         Yields:
             StreamEvent objects for text, tool calls, and completion.
         """
-        session = await self.session_manager.get_or_create_session(session_id)
-        actual_session_id = session.session_id
+        session: ManagedSession | None = None
 
-        # Build prompt with conversation history
-        context_prompt = self.session_manager.build_context_prompt(session, prompt)
+        # Try to get existing session
+        if session_id:
+            session = await self.session_manager.get_session(session_id)
+            if session is None:
+                logger.info(f"Session {session_id} not found, creating new session")
 
-        # Store user message in history
-        await self.session_manager.add_message(actual_session_id, "user", prompt)
+        # Create new session if needed
+        if session is None:
+            opts = options or get_default_options()
+            session = await self.session_manager.create_session(opts)
+            logger.info(f"Created new session {session.session_id}")
 
-        # Collect assistant response for history
-        assistant_response_parts: list[str] = []
+        # Update session state
+        await self.session_manager.set_session_state(session.session_id, SessionState.STREAMING)
 
         try:
-            async for message in query(prompt=context_prompt, options=self.options):
-                async for event in self._process_message(message, actual_session_id):
-                    # Collect text for history
-                    if event.type == "text" and event.text:
-                        assistant_response_parts.append(event.text)
+            # Send query to the client
+            await session.client.query(prompt)
 
-                    yield event
-
-                    # Check if we should pause for user input
-                    if event.type == "user_input_required":
-                        await self.session_manager.mark_waiting_for_input(
-                            actual_session_id
-                        )
-                        # Save partial response before pausing
-                        if assistant_response_parts:
-                            await self.session_manager.add_message(
-                                actual_session_id,
-                                "assistant",
-                                "".join(assistant_response_parts),
-                            )
-                        return
-
-            # Save complete assistant response to history
-            if assistant_response_parts:
-                await self.session_manager.add_message(
-                    actual_session_id, "assistant", "".join(assistant_response_parts)
-                )
+            # Stream the response
+            async for event in self._process_response(session):
+                yield event
 
         except Exception as e:
-            logger.exception(f"Error in run for session {actual_session_id}")
-            yield StreamEvent(type="error", text=str(e), is_error=True)
+            logger.error(f"Error in session {session.session_id}: {e}")
+            await self.session_manager.set_session_state(session.session_id, SessionState.ERROR)
+            yield StreamEvent(
+                type="error",
+                text=str(e),
+                is_error=True,
+                session_id=session.session_id,
+            )
 
-    async def respond_to_user_prompt(
-        self, session_id: str, response: str
+    async def respond_to_prompt(
+        self,
+        session_id: str,
+        response: str,
     ) -> AsyncIterator[StreamEvent]:
-        """Continue a conversation after user provides input.
+        """Continue session with user response to AskUserQuestion.
 
         Args:
-            session_id: The session ID to resume.
-            response: The user's response to the prompt.
+            session_id: The session ID to continue.
+            response: The user's response.
 
         Yields:
             StreamEvent objects for the continued conversation.
+
+        Raises:
+            SessionNotFoundError: If session is not found.
         """
         session = await self.session_manager.get_session(session_id)
-        if not session:
-            yield StreamEvent(type="error", text="Session not found", is_error=True)
-            return
+        if session is None:
+            raise SessionNotFoundError(f"Session {session_id} not found")
 
-        if not session.waiting_for_user_input:
+        # Update session state
+        await self.session_manager.set_session_state(session.session_id, SessionState.STREAMING)
+
+        try:
+            # Send the user's response
+            await session.client.query(response)
+
+            # Stream the response
+            async for event in self._process_response(session):
+                yield event
+
+        except Exception as e:
+            logger.error(f"Error in session {session.session_id}: {e}")
+            await self.session_manager.set_session_state(session.session_id, SessionState.ERROR)
             yield StreamEvent(
-                type="error", text="Session not waiting for input", is_error=True
+                type="error",
+                text=str(e),
+                is_error=True,
+                session_id=session.session_id,
             )
-            return
 
-        await self.session_manager.clear_waiting_for_input(session_id)
-
-        # Use run() to continue the conversation with the user's response
-        async for event in self.run(response, session_id):
-            yield event
-
-    async def _process_message(
-        self, message: Any, session_id: str
-    ) -> AsyncIterator[StreamEvent]:
-        """Process a message from the SDK and yield events.
+    async def _process_response(self, session: ManagedSession) -> AsyncIterator[StreamEvent]:
+        """Process messages from the client and yield StreamEvents.
 
         Args:
-            message: Message from query().
-            session_id: Current session ID.
+            session: The active session.
+
+        Yields:
+            StreamEvent objects for each message component.
+        """
+        async for message in session.client.receive_response():
+            if isinstance(message, AssistantMessage):
+                for block in message.content:
+                    if isinstance(block, TextBlock):
+                        yield StreamEvent(
+                            type="text",
+                            text=block.text,
+                            session_id=session.session_id,
+                        )
+                    elif isinstance(block, ToolUseBlock):
+                        # Check for AskUserQuestion tool
+                        if block.name == "AskUserQuestion":
+                            await self.session_manager.set_session_state(
+                                session.session_id, SessionState.WAITING_INPUT
+                            )
+                            yield StreamEvent(
+                                type="user_input_required",
+                                tool_name=block.name,
+                                tool_id=block.id,
+                                tool_input=block.input,
+                                questions=block.input.get("questions"),
+                                session_id=session.session_id,
+                            )
+                        else:
+                            yield StreamEvent(
+                                type="tool_start",
+                                tool_name=block.name,
+                                tool_id=block.id,
+                                tool_input=block.input,
+                                session_id=session.session_id,
+                            )
+                    elif isinstance(block, ToolResultBlock):
+                        yield StreamEvent(
+                            type="tool_result",
+                            tool_id=block.tool_use_id,
+                            tool_result=block.content
+                            if isinstance(block.content, str)
+                            else str(block.content),
+                            is_error=block.is_error or False,
+                            session_id=session.session_id,
+                        )
+
+            elif isinstance(message, ResultMessage):
+                # Determine final state based on result
+                final_state = SessionState.ERROR if message.is_error else SessionState.ACTIVE
+
+                await self.session_manager.set_session_state(session.session_id, final_state)
+
+                yield StreamEvent(
+                    type="done",
+                    session_id=session.session_id,
+                    cost=message.total_cost_usd,
+                    is_error=message.is_error,
+                )
+
+    async def delete_session(self, session_id: str) -> bool:
+        """Delete a session explicitly.
+
+        Args:
+            session_id: The session ID to delete.
+
+        Returns:
+            True if session was found and deleted.
+        """
+        return await self.session_manager.delete_session(session_id)
+
+    async def cleanup(self) -> None:
+        """Clean up all sessions (for shutdown)."""
+        await self.session_manager.cleanup_all()
+
+
+# Keep AgentRunner as an alias for backward compatibility with tests
+class AgentRunner(AgentManager):
+    """Deprecated: Use AgentManager instead.
+
+    This alias is kept for backward compatibility.
+    """
+
+    async def run(self, prompt: str) -> AsyncIterator[StreamEvent]:
+        """Run a query (backward compatible method).
+
+        Args:
+            prompt: The user's prompt.
 
         Yields:
             StreamEvent objects.
         """
-        if isinstance(message, AssistantMessage):
-            for block in message.content:
-                if isinstance(block, TextBlock):
-                    yield StreamEvent(type="text", text=block.text)
-                elif isinstance(block, ToolUseBlock):
-                    # Check for AskUserQuestion tool
-                    if block.name == "AskUserQuestion":
-                        questions = block.input.get("questions", [])
-                        yield StreamEvent(
-                            type="user_input_required",
-                            tool_id=block.id,
-                            tool_name=block.name,
-                            tool_input=block.input,
-                            questions=questions,
-                        )
-                    else:
-                        yield StreamEvent(
-                            type="tool_start",
-                            tool_name=block.name,
-                            tool_id=block.id,
-                            tool_input=block.input,
-                        )
-
-        elif isinstance(message, UserMessage):
-            # UserMessage can contain tool results
-            if isinstance(message.content, list):
-                for block in message.content:
-                    if isinstance(block, ToolResultBlock):
-                        yield StreamEvent(
-                            type="tool_result",
-                            tool_id=block.tool_use_id,
-                            content=_serialize_content(block.content),
-                            is_error=block.is_error or False,
-                        )
-
-        elif isinstance(message, ResultMessage):
-            yield StreamEvent(
-                type="done",
-                session_id=session_id,
-                cost=message.total_cost_usd,
-                is_error=message.is_error,
-            )
+        async for event in self.stream_response(prompt):
+            yield event

@@ -21,6 +21,7 @@ export interface StreamEvent {
   is_error?: boolean;
   session_id?: string;
   result?: string;
+  tool_result?: string;
   error?: string;
   cost?: number;
   questions?: UserQuestion[];

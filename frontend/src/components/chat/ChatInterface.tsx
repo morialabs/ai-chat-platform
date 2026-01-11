@@ -11,6 +11,7 @@ import {
 import { ChatProvider } from "./ChatProvider";
 import { ChatContextProvider } from "./ChatContext";
 import { ToolFallback } from "./ToolUI";
+import { MarkdownText } from "@/components/assistant-ui/markdown-text";
 
 function UserMessage(): React.JSX.Element {
   return (
@@ -28,6 +29,7 @@ function AssistantMessage(): React.JSX.Element {
       <div className="bg-gray-100 dark:bg-gray-800 dark:text-gray-100 rounded-lg px-4 py-2 max-w-[80%]">
         <MessagePrimitive.Parts
           components={{
+            Text: MarkdownText,
             tools: { Fallback: ToolFallback },
           }}
         />
