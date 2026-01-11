@@ -1,5 +1,6 @@
-"""Claude Agent SDK client wrapper."""
+"""Claude Agent SDK client wrapper with multi-turn session support."""
 
+import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
@@ -9,11 +10,16 @@ from claude_code_sdk import (
     ClaudeCodeOptions,
     ResultMessage,
     TextBlock,
+    ToolResultBlock,
     ToolUseBlock,
-    query,
 )
 
+from src.agent.exceptions import SessionNotFoundError
 from src.agent.options import get_default_options
+from src.config import settings
+from src.services.sessions import ManagedSession, SessionManager, SessionState
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -25,48 +31,212 @@ class StreamEvent:
     tool_name: str | None = None
     tool_id: str | None = None
     tool_input: dict[str, Any] | None = None
+    tool_result: str | None = None
     session_id: str | None = None
     cost: float | None = None
     is_error: bool = False
+    questions: list[dict[str, Any]] | None = None  # For AskUserQuestion
 
 
-class AgentRunner:
-    """Runs Claude agent queries with streaming output."""
+class AgentManager:
+    """Manages Claude Agent SDK sessions with multi-turn support.
 
-    def __init__(self, options: ClaudeCodeOptions | None = None) -> None:
-        """Initialize the agent runner.
+    Uses ClaudeSDKClient to maintain conversation context across
+    multiple exchanges in the same session.
+    """
+
+    def __init__(self) -> None:
+        """Initialize the agent manager with a session manager."""
+        self.session_manager = SessionManager(ttl_seconds=settings.session_ttl_seconds)
+
+    async def stream_response(
+        self,
+        prompt: str,
+        session_id: str | None = None,
+        options: ClaudeCodeOptions | None = None,
+    ) -> AsyncIterator[StreamEvent]:
+        """Stream response from existing or new session.
 
         Args:
-            options: Custom options, or None to use defaults.
+            prompt: The user's message/prompt.
+            session_id: Optional existing session ID to continue.
+            options: Optional custom options (used only for new sessions).
+
+        Yields:
+            StreamEvent objects for text, tool calls, and completion.
         """
-        self.options = options or get_default_options()
+        session: ManagedSession | None = None
+
+        # Try to get existing session
+        if session_id:
+            session = await self.session_manager.get_session(session_id)
+            if session is None:
+                logger.info(f"Session {session_id} not found, creating new session")
+
+        # Create new session if needed
+        if session is None:
+            opts = options or get_default_options()
+            session = await self.session_manager.create_session(opts)
+            logger.info(f"Created new session {session.session_id}")
+
+        # Update session state
+        await self.session_manager.set_session_state(session.session_id, SessionState.STREAMING)
+
+        try:
+            # Send query to the client
+            await session.client.query(prompt)
+
+            # Stream the response
+            async for event in self._process_response(session):
+                yield event
+
+        except Exception as e:
+            logger.error(f"Error in session {session.session_id}: {e}")
+            await self.session_manager.set_session_state(session.session_id, SessionState.ERROR)
+            yield StreamEvent(
+                type="error",
+                text=str(e),
+                is_error=True,
+                session_id=session.session_id,
+            )
+
+    async def respond_to_prompt(
+        self,
+        session_id: str,
+        response: str,
+    ) -> AsyncIterator[StreamEvent]:
+        """Continue session with user response to AskUserQuestion.
+
+        Args:
+            session_id: The session ID to continue.
+            response: The user's response.
+
+        Yields:
+            StreamEvent objects for the continued conversation.
+
+        Raises:
+            SessionNotFoundError: If session is not found.
+        """
+        session = await self.session_manager.get_session(session_id)
+        if session is None:
+            raise SessionNotFoundError(f"Session {session_id} not found")
+
+        # Update session state
+        await self.session_manager.set_session_state(session.session_id, SessionState.STREAMING)
+
+        try:
+            # Send the user's response
+            await session.client.query(response)
+
+            # Stream the response
+            async for event in self._process_response(session):
+                yield event
+
+        except Exception as e:
+            logger.error(f"Error in session {session.session_id}: {e}")
+            await self.session_manager.set_session_state(session.session_id, SessionState.ERROR)
+            yield StreamEvent(
+                type="error",
+                text=str(e),
+                is_error=True,
+                session_id=session.session_id,
+            )
+
+    async def _process_response(self, session: ManagedSession) -> AsyncIterator[StreamEvent]:
+        """Process messages from the client and yield StreamEvents.
+
+        Args:
+            session: The active session.
+
+        Yields:
+            StreamEvent objects for each message component.
+        """
+        async for message in session.client.receive_response():
+            if isinstance(message, AssistantMessage):
+                for block in message.content:
+                    if isinstance(block, TextBlock):
+                        yield StreamEvent(
+                            type="text",
+                            text=block.text,
+                            session_id=session.session_id,
+                        )
+                    elif isinstance(block, ToolUseBlock):
+                        # Check for AskUserQuestion tool
+                        if block.name == "AskUserQuestion":
+                            await self.session_manager.set_session_state(
+                                session.session_id, SessionState.WAITING_INPUT
+                            )
+                            yield StreamEvent(
+                                type="user_input_required",
+                                tool_name=block.name,
+                                tool_id=block.id,
+                                tool_input=block.input,
+                                questions=block.input.get("questions"),
+                                session_id=session.session_id,
+                            )
+                        else:
+                            yield StreamEvent(
+                                type="tool_start",
+                                tool_name=block.name,
+                                tool_id=block.id,
+                                tool_input=block.input,
+                                session_id=session.session_id,
+                            )
+                    elif isinstance(block, ToolResultBlock):
+                        yield StreamEvent(
+                            type="tool_result",
+                            tool_id=block.tool_use_id,
+                            tool_result=block.content
+                            if isinstance(block.content, str)
+                            else str(block.content),
+                            is_error=block.is_error or False,
+                            session_id=session.session_id,
+                        )
+
+            elif isinstance(message, ResultMessage):
+                # Determine final state based on result
+                final_state = SessionState.ERROR if message.is_error else SessionState.ACTIVE
+
+                await self.session_manager.set_session_state(session.session_id, final_state)
+
+                yield StreamEvent(
+                    type="done",
+                    session_id=session.session_id,
+                    cost=message.total_cost_usd,
+                    is_error=message.is_error,
+                )
+
+    async def delete_session(self, session_id: str) -> bool:
+        """Delete a session explicitly.
+
+        Args:
+            session_id: The session ID to delete.
+
+        Returns:
+            True if session was found and deleted.
+        """
+        return await self.session_manager.delete_session(session_id)
+
+    async def cleanup(self) -> None:
+        """Clean up all sessions (for shutdown)."""
+        await self.session_manager.cleanup_all()
+
+
+# Keep AgentRunner as an alias for backward compatibility with tests
+class AgentRunner(AgentManager):
+    """Deprecated: Use AgentManager instead.
+
+    This alias is kept for backward compatibility.
+    """
 
     async def run(self, prompt: str) -> AsyncIterator[StreamEvent]:
-        """Run a query and yield streaming events.
+        """Run a query (backward compatible method).
 
         Args:
             prompt: The user's prompt.
 
         Yields:
-            StreamEvent objects for text, tool calls, and completion.
+            StreamEvent objects.
         """
-        async for message in query(prompt=prompt, options=self.options):
-            if isinstance(message, AssistantMessage):
-                for block in message.content:
-                    if isinstance(block, TextBlock):
-                        yield StreamEvent(type="text", text=block.text)
-                    elif isinstance(block, ToolUseBlock):
-                        yield StreamEvent(
-                            type="tool_start",
-                            tool_name=block.name,
-                            tool_id=block.id,
-                            tool_input=block.input,
-                        )
-
-            elif isinstance(message, ResultMessage):
-                yield StreamEvent(
-                    type="done",
-                    session_id=message.session_id,
-                    cost=message.total_cost_usd,
-                    is_error=message.is_error,
-                )
+        async for event in self.stream_response(prompt):
+            yield event

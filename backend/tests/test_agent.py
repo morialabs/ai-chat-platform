@@ -1,21 +1,21 @@
 """Test agent module."""
 
-from src.agent.client import AgentRunner, StreamEvent
+from src.agent.client import AgentManager, AgentRunner, StreamEvent
 from src.agent.options import get_default_options
 
 
-def test_agent_runner_instantiates() -> None:
-    """Verify AgentRunner can be created."""
+def test_agent_manager_instantiates() -> None:
+    """Verify AgentManager can be created."""
+    manager = AgentManager()
+    assert manager is not None
+    assert manager.session_manager is not None
+
+
+def test_agent_runner_backward_compatible() -> None:
+    """Verify AgentRunner alias still works."""
     runner = AgentRunner()
     assert runner is not None
-    assert runner.options is not None
-
-
-def test_agent_runner_with_custom_options() -> None:
-    """Verify AgentRunner accepts custom options."""
-    options = get_default_options()
-    runner = AgentRunner(options=options)
-    assert runner.options == options
+    assert isinstance(runner, AgentManager)
 
 
 def test_default_options_valid() -> None:
@@ -57,3 +57,29 @@ def test_stream_event_done() -> None:
     assert event.type == "done"
     assert event.session_id == "session-123"
     assert event.cost == 0.0025
+
+
+def test_stream_event_user_input_required() -> None:
+    """Verify StreamEvent can represent user input request."""
+    questions = [{"question": "What color?", "options": ["Red", "Blue"]}]
+    event = StreamEvent(
+        type="user_input_required",
+        tool_name="AskUserQuestion",
+        tool_id="ask-123",
+        questions=questions,
+    )
+    assert event.type == "user_input_required"
+    assert event.questions == questions
+
+
+def test_stream_event_tool_result() -> None:
+    """Verify StreamEvent can represent tool result."""
+    event = StreamEvent(
+        type="tool_result",
+        tool_id="123",
+        tool_result="File contents here",
+        is_error=False,
+    )
+    assert event.type == "tool_result"
+    assert event.tool_result == "File contents here"
+    assert event.is_error is False
