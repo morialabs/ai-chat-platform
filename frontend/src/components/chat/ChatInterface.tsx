@@ -5,41 +5,49 @@ import {
   ThreadPrimitive,
   ComposerPrimitive,
   MessagePrimitive,
+  useThreadRuntime,
 } from "@assistant-ui/react";
 
 import { ChatProvider } from "./ChatProvider";
-import { UserPromptModal } from "./UserPromptModal";
+import { ChatContextProvider } from "./ChatContext";
 import { ToolFallback } from "./ToolUI";
-import type { UserPrompt } from "@/lib/types";
 
-function ThreadMessages() {
+function UserMessage(): React.JSX.Element {
+  return (
+    <MessagePrimitive.Root className="flex justify-end mb-4">
+      <div className="bg-blue-500 text-white rounded-lg px-4 py-2 max-w-[80%]">
+        <MessagePrimitive.Content />
+      </div>
+    </MessagePrimitive.Root>
+  );
+}
+
+function AssistantMessage(): React.JSX.Element {
+  return (
+    <MessagePrimitive.Root className="flex justify-start mb-4">
+      <div className="bg-gray-100 dark:bg-gray-800 dark:text-gray-100 rounded-lg px-4 py-2 max-w-[80%]">
+        <MessagePrimitive.Parts
+          components={{
+            tools: { Fallback: ToolFallback },
+          }}
+        />
+      </div>
+    </MessagePrimitive.Root>
+  );
+}
+
+function ThreadMessages(): React.JSX.Element {
   return (
     <ThreadPrimitive.Messages
       components={{
-        UserMessage: () => (
-          <MessagePrimitive.Root className="flex justify-end mb-4">
-            <div className="bg-blue-500 text-white rounded-lg px-4 py-2 max-w-[80%]">
-              <MessagePrimitive.Content />
-            </div>
-          </MessagePrimitive.Root>
-        ),
-        AssistantMessage: () => (
-          <MessagePrimitive.Root className="flex justify-start mb-4">
-            <div className="bg-gray-100 dark:bg-gray-800 dark:text-gray-100 rounded-lg px-4 py-2 max-w-[80%]">
-              <MessagePrimitive.Parts
-                components={{
-                  tools: { Fallback: ToolFallback },
-                }}
-              />
-            </div>
-          </MessagePrimitive.Root>
-        ),
+        UserMessage,
+        AssistantMessage,
       }}
     />
   );
 }
 
-function ThreadComposer() {
+function ThreadComposer(): React.JSX.Element {
   return (
     <ComposerPrimitive.Root className="p-4 border-t dark:border-gray-700">
       <div className="flex gap-2 max-w-4xl mx-auto">
@@ -55,7 +63,7 @@ function ThreadComposer() {
   );
 }
 
-function ThreadWelcome() {
+function ThreadWelcome(): React.JSX.Element {
   return (
     <ThreadPrimitive.Empty>
       <div className="text-center p-8">
@@ -69,37 +77,29 @@ function ThreadWelcome() {
   );
 }
 
-export function ChatInterface() {
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [pendingPrompt, setPendingPrompt] = useState<UserPrompt | null>(null);
+interface ChatContentProps {
+  sessionId: string | null;
+}
 
-  const handleUserInputRequired = useCallback((data: UserPrompt) => {
-    setPendingPrompt(data);
-  }, []);
+function ChatContent({ sessionId }: ChatContentProps): React.JSX.Element {
+  const runtime = useThreadRuntime();
 
-  const handlePromptResponse = useCallback(
-    async (answers: Record<string, string>) => {
-      if (!sessionId) return;
+  const handleRespondToQuestion = useCallback(
+    (answers: Record<string, string>) => {
+      const answerText = Object.entries(answers)
+        .map(([question, answer]) => `${question}: ${answer}`)
+        .join("\n");
 
-      await fetch("/api/chat/respond", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          session_id: sessionId,
-          response: JSON.stringify(answers),
-        }),
-      });
-
-      setPendingPrompt(null);
+      runtime.composer.setText(answerText);
+      runtime.composer.send();
     },
-    [sessionId]
+    [runtime]
   );
 
   return (
-    <ChatProvider
+    <ChatContextProvider
       sessionId={sessionId}
-      onSessionIdChange={setSessionId}
-      onUserInputRequired={handleUserInputRequired}
+      respondToQuestion={handleRespondToQuestion}
     >
       <div className="flex flex-col h-screen bg-white dark:bg-gray-900">
         <ThreadPrimitive.Root className="flex-1 flex flex-col">
@@ -109,15 +109,17 @@ export function ChatInterface() {
           </ThreadPrimitive.Viewport>
           <ThreadComposer />
         </ThreadPrimitive.Root>
-
-        {pendingPrompt && (
-          <UserPromptModal
-            prompt={pendingPrompt}
-            onRespond={handlePromptResponse}
-            onCancel={() => setPendingPrompt(null)}
-          />
-        )}
       </div>
+    </ChatContextProvider>
+  );
+}
+
+export function ChatInterface(): React.JSX.Element {
+  const [sessionId, setSessionId] = useState<string | null>(null);
+
+  return (
+    <ChatProvider sessionId={sessionId} onSessionIdChange={setSessionId}>
+      <ChatContent sessionId={sessionId} />
     </ChatProvider>
   );
 }

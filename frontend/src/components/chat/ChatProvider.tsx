@@ -6,8 +6,8 @@ import {
   type ChatModelAdapter,
   type ChatModelRunResult,
 } from "@assistant-ui/react";
-import { ReactNode, useCallback } from "react";
-import type { StreamEvent, UserPrompt } from "@/lib/types";
+import { useMemo, type ReactNode } from "react";
+import type { StreamEvent } from "@/lib/types";
 
 interface ToolCallState {
   toolCallId: string;
@@ -39,8 +39,7 @@ function buildContent(
 
 const createChatAdapter = (
   sessionId: string | null,
-  onSessionId: (id: string) => void,
-  onUserInputRequired: (data: UserPrompt) => void
+  onSessionId: (id: string) => void
 ): ChatModelAdapter => {
   return {
     async *run({ messages, abortSignal }): AsyncGenerator<ChatModelRunResult> {
@@ -99,6 +98,7 @@ const createChatAdapter = (
                   break;
 
                 case "tool_start":
+                case "user_input_required":
                   if (event.tool_id && event.tool_name) {
                     toolCalls.set(event.tool_id, {
                       toolCallId: event.tool_id,
@@ -119,15 +119,6 @@ const createChatAdapter = (
                       yield { content: buildContent(accumulatedText, toolCalls) };
                     }
                   }
-                  break;
-
-                case "user_input_required":
-                  // Extract questions from the event (they can be at top level or in tool_input)
-                  const questions =
-                    event.questions ||
-                    (event.tool_input as { questions?: UserPrompt["questions"] })?.questions ||
-                    [];
-                  onUserInputRequired({ questions });
                   break;
 
                 case "done":
@@ -162,21 +153,19 @@ interface ChatProviderProps {
   children: ReactNode;
   sessionId?: string | null;
   onSessionIdChange?: (id: string) => void;
-  onUserInputRequired?: (data: UserPrompt) => void;
 }
 
 export function ChatProvider({
   children,
   sessionId = null,
   onSessionIdChange = () => {},
-  onUserInputRequired = () => {},
-}: ChatProviderProps) {
-  const adapter = useCallback(
-    () => createChatAdapter(sessionId, onSessionIdChange, onUserInputRequired),
-    [sessionId, onSessionIdChange, onUserInputRequired]
+}: ChatProviderProps): React.JSX.Element {
+  const adapter = useMemo(
+    () => createChatAdapter(sessionId, onSessionIdChange),
+    [sessionId, onSessionIdChange]
   );
 
-  const runtime = useLocalRuntime(adapter());
+  const runtime = useLocalRuntime(adapter);
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>

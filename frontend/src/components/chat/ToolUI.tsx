@@ -2,6 +2,9 @@
 
 import type { ToolCallMessagePartComponent } from "@assistant-ui/react";
 import { ToolCallDisplay } from "./ToolCallDisplay";
+import { AskUserQuestionUI } from "./AskUserQuestionUI";
+import { useChatContext } from "./ChatContext";
+import type { UserQuestion } from "@/lib/types";
 
 type ToolStatus = "pending" | "running" | "complete" | "error";
 
@@ -26,7 +29,12 @@ function mapStatus(status: ToolCallStatus): ToolStatus {
   }
 }
 
-// ToolFallback component for rendering any tool call
+function formatResult(result: unknown, pretty = false): string | undefined {
+  if (result === undefined) return undefined;
+  if (typeof result === "string") return result;
+  return pretty ? JSON.stringify(result, null, 2) : JSON.stringify(result);
+}
+
 export const ToolFallback: ToolCallMessagePartComponent = ({
   toolCallId,
   toolName,
@@ -35,10 +43,20 @@ export const ToolFallback: ToolCallMessagePartComponent = ({
   isError,
   status,
 }) => {
-  // Override status to error if isError is true
-  const derivedStatus = isError
-    ? "error"
-    : mapStatus(status as ToolCallStatus);
+  const { respondToQuestion } = useChatContext();
+
+  const derivedStatus = isError ? "error" : mapStatus(status as ToolCallStatus);
+
+  if (toolName === "AskUserQuestion") {
+    const questions = (args as { questions?: UserQuestion[] })?.questions || [];
+    return (
+      <AskUserQuestionUI
+        questions={questions}
+        result={formatResult(result)}
+        onRespond={respondToQuestion}
+      />
+    );
+  }
 
   return (
     <ToolCallDisplay
@@ -46,12 +64,7 @@ export const ToolFallback: ToolCallMessagePartComponent = ({
         toolCallId,
         toolName,
         args,
-        result:
-          result !== undefined
-            ? typeof result === "string"
-              ? result
-              : JSON.stringify(result, null, 2)
-            : undefined,
+        result: formatResult(result, true),
         status: derivedStatus,
       }}
     />
