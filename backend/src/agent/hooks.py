@@ -58,9 +58,7 @@ async def validate_bash_commands(
                 "hookSpecificOutput": {
                     "hookEventName": "PreToolUse",
                     "permissionDecision": "deny",
-                    "permissionDecisionReason": (
-                        f"Dangerous command pattern blocked: {pattern}"
-                    ),
+                    "permissionDecisionReason": (f"Dangerous command pattern blocked: {pattern}"),
                 }
             }
 

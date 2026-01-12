@@ -74,13 +74,10 @@ class AgentManager:
         if session_id:
             session = await self.session_manager.get_session(session_id)
             if session is None:
-                logger.info(
-                    f"[stream_response] Session {session_id} not found, creating new"
-                )
+                logger.info(f"[stream_response] Session {session_id} not found, creating new")
             else:
                 logger.info(
-                    f"[stream_response] Found existing session {session_id}, "
-                    f"state={session.state}"
+                    f"[stream_response] Found existing session {session_id}, state={session.state}"
                 )
 
         # Create new session if needed
@@ -92,13 +89,13 @@ class AgentManager:
             # For multi-turn: reconnect the client with resume option to continue
             # conversation. Works around SDK limitation where receive_response()
             # can only be iterated once.
-            logger.info(
-                f"[stream_response] Reconnecting with resume={session.sdk_session_id}"
-            )
+            logger.info(f"[stream_response] Reconnecting with resume={session.sdk_session_id}")
             await session.client.disconnect()
             from dataclasses import replace
+
             resumed_opts = replace(session.options, resume=session.sdk_session_id)
             from claude_agent_sdk import ClaudeSDKClient
+
             session.client = ClaudeSDKClient(options=resumed_opts)
             await session.client.connect()
             logger.info("[stream_response] Client reconnected with resume option")
@@ -108,9 +105,7 @@ class AgentManager:
 
         try:
             # Send query to the client
-            logger.info(
-                f"[stream_response] Sending query to session {session.session_id}"
-            )
+            logger.info(f"[stream_response] Sending query to session {session.session_id}")
             await session.client.query(prompt)
             logger.info("[stream_response] Query sent, starting to receive response")
 
@@ -118,9 +113,7 @@ class AgentManager:
             async for event in self._process_response(session):
                 yield event
 
-            logger.info(
-                f"[stream_response] Response complete for session {session.session_id}"
-            )
+            logger.info(f"[stream_response] Response complete for session {session.session_id}")
 
         except Exception as e:
             logger.error(f"Error in session {session.session_id}: {e}")
@@ -169,9 +162,7 @@ class AgentManager:
             async for event in self._process_response(session):
                 yield event
 
-            logger.info(
-                f"[respond_to_prompt] Complete for session {session.session_id}"
-            )
+            logger.info(f"[respond_to_prompt] Complete for session {session.session_id}")
 
         except Exception as e:
             logger.error(f"Error in session {session.session_id}: {e}")
@@ -205,9 +196,7 @@ class AgentManager:
         # Track AskUserQuestion tool IDs to skip their results
         ask_user_question_ids: set[str] = set()
 
-        logger.info(
-            f"[_process_response] Starting receive_response() for {session.session_id}"
-        )
+        logger.info(f"[_process_response] Starting receive_response() for {session.session_id}")
         async for message in session.client.receive_response():
             logger.info(f"[_process_response] Received message type: {type(message).__name__}")
             if isinstance(message, AssistantMessage):
