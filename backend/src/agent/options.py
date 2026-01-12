@@ -1,7 +1,7 @@
 """Agent configuration options."""
 
-from claude_code_sdk import ClaudeCodeOptions
-from claude_code_sdk.types import McpServerConfig
+from claude_agent_sdk import ClaudeAgentOptions
+from claude_agent_sdk.types import McpServerConfig
 
 from src.agent.hooks import create_hooks
 from src.config import settings
@@ -10,7 +10,7 @@ from src.tools.server import create_tools_server
 
 def get_default_options(
     *, include_hooks: bool = False, include_custom_tools: bool = False
-) -> ClaudeCodeOptions:
+) -> ClaudeAgentOptions:
     """Create default agent options.
 
     Args:
@@ -18,7 +18,7 @@ def get_default_options(
         include_custom_tools: Whether to include custom MCP tools.
 
     Returns:
-        Configured ClaudeCodeOptions.
+        Configured ClaudeAgentOptions.
     """
     # Base allowed tools
     allowed_tools = [
@@ -42,7 +42,7 @@ def get_default_options(
     if include_custom_tools:
         mcp_servers["tools"] = create_tools_server()
 
-    return ClaudeCodeOptions(
+    return ClaudeAgentOptions(
         # Core settings
         model=settings.model,
         cwd=str(settings.workspace_dir),
@@ -52,8 +52,10 @@ def get_default_options(
         allowed_tools=allowed_tools,
         # MCP servers for custom tools
         mcp_servers=mcp_servers,
+        # Enable multi-turn conversation support
+        continue_conversation=True,
         # System prompt customization
-        append_system_prompt=f"""
+        system_prompt=f"""
 You are an AI assistant for {settings.app_name}.
 Be helpful, concise, and accurate in your responses.
 """,

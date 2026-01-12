@@ -16,6 +16,14 @@ from src.api.routes import chat_router
 from src.api.routes.chat import get_agent_manager
 from src.config import settings
 
+# Configure logging to show INFO level for all app loggers
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(levelname)s:%(name)s:%(message)s",
+)
+# Set DEBUG level for our agent client to see detailed logs
+logging.getLogger("src.agent.client").setLevel(logging.DEBUG)
+
 logger = logging.getLogger(__name__)
 
 

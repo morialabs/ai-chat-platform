@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from claude_code_sdk import tool
+from claude_agent_sdk import tool
 
 
 @tool("echo", "Echo back the input message", {"message": str})

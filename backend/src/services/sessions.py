@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 
-from claude_code_sdk import ClaudeCodeOptions, ClaudeSDKClient
+from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
 
 from src.agent.exceptions import SessionNotFoundError
 
@@ -30,11 +30,13 @@ class ManagedSession:
 
     client: ClaudeSDKClient
     session_id: str
-    options: ClaudeCodeOptions
+    options: ClaudeAgentOptions
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     last_accessed: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     state: SessionState = SessionState.ACTIVE
     user_id: str | None = None
+    # Claude Code SDK session ID (returned in ResultMessage)
+    sdk_session_id: str = "default"
 
     def touch(self) -> None:
         """Update last_accessed timestamp."""
@@ -65,7 +67,7 @@ class SessionManager:
 
     async def create_session(
         self,
-        options: ClaudeCodeOptions,
+        options: ClaudeAgentOptions,
         user_id: str | None = None,
     ) -> ManagedSession:
         """Create a new session with ClaudeSDKClient.

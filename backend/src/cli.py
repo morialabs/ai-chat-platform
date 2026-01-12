@@ -8,13 +8,15 @@ import asyncio
 import sys
 
 from src.agent.client import AgentRunner
+from src.agent.options import get_default_options
 
 
 async def run_agent(prompt: str) -> None:
     """Run the agent with a prompt and print output."""
     runner = AgentRunner()
+    options = get_default_options(include_custom_tools=True)
 
-    async for event in runner.run(prompt):
+    async for event in runner.stream_response(prompt, options=options):
         if event.type == "text" and event.text:
             print(event.text, end="", flush=True)
         elif event.type == "tool_start":

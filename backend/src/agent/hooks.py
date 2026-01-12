@@ -3,10 +3,10 @@
 import logging
 from typing import TYPE_CHECKING, Any, Literal
 
-from claude_code_sdk import HookContext, HookMatcher
+from claude_agent_sdk import HookContext, HookMatcher
 
 if TYPE_CHECKING:
-    from claude_code_sdk.types import HookJSONOutput
+    from claude_agent_sdk.types import HookJSONOutput
 
 logger = logging.getLogger(__name__)
 
