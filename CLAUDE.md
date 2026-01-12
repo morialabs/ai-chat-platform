@@ -103,6 +103,25 @@ cd backend && venv/bin/python -m src.cli "Your prompt here"
 
 ## Running the Full Application
 
+### Using /dev Command (Recommended)
+
+The easiest way to start development servers is with the `/dev` command:
+
+```bash
+/dev start    # Start both backend and frontend servers
+/dev stop     # Stop both servers
+/dev restart  # Restart both servers
+/dev          # Same as /dev start
+```
+
+The command automatically:
+- Detects configured ports from `.env` files
+- Skips servers that are already running
+- Launches servers as background tasks
+- Reports status with URLs
+
+### Manual Method
+
 1. **Set your API key:**
    ```bash
    cd backend
