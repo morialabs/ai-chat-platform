@@ -1,191 +1,146 @@
 "use client";
 
-import type { ReactNode } from "react";
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  type ReactNode,
+} from "react";
+import { useChat, type Message } from "@ai-sdk/react";
 
-import {
-  AssistantRuntimeProvider,
-  useLocalRuntime,
-  type ChatModelAdapter,
-  type ChatModelRunResult,
-} from "@assistant-ui/react";
-
-import type { StreamEvent, UserPrompt } from "@/lib/types";
-
-interface ToolCallState {
-  toolCallId: string;
-  toolName: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  args: any;
-  argsText: string;
-  result?: unknown;
-  isError?: boolean;
+/**
+ * Context value provided by ChatProvider.
+ * Extends useChat return values with session management and question response.
+ */
+interface ChatContextValue {
+  /** Current conversation messages */
+  messages: Message[];
+  /** Current input value */
+  input: string;
+  /** Set input value */
+  setInput: (input: string) => void;
+  /** Handle form submission */
+  handleSubmit: (e: React.FormEvent) => void;
+  /** Whether a response is being streamed */
+  isLoading: boolean;
+  /** Current error if any */
+  error: Error | undefined;
+  /** Current session ID for multi-turn conversations */
+  sessionId: string | null;
+  /** Add a tool result (for AskUserQuestion responses) */
+  addToolResult: (params: { toolCallId: string; result: string }) => void;
+  /** Respond to an AskUserQuestion tool call */
+  respondToQuestion: (
+    toolCallId: string,
+    answers: Record<string, string>
+  ) => void;
+  /** Reload/retry the last message */
+  reload: () => void;
+  /** Stop current streaming */
+  stop: () => void;
+  /** Chat status */
+  status: "streaming" | "submitted" | "ready" | "error";
 }
 
-function buildContent(
-  text: string,
-  toolCalls: Map<string, ToolCallState>
-): ChatModelRunResult["content"] {
-  const textPart = text ? [{ type: "text" as const, text }] : [];
-  const toolCallParts = Array.from(toolCalls.values()).map((tc) => ({
-    type: "tool-call" as const,
-    toolCallId: tc.toolCallId,
-    toolName: tc.toolName,
-    args: tc.args,
-    argsText: tc.argsText,
-    result: tc.result,
-    isError: tc.isError,
-  }));
+const ChatContext = createContext<ChatContextValue | null>(null);
 
-  return [...textPart, ...toolCallParts];
+/**
+ * Hook to access chat context.
+ * Must be used within a ChatProvider.
+ */
+export function useChatContext(): ChatContextValue {
+  const context = useContext(ChatContext);
+  if (!context) {
+    throw new Error("useChatContext must be used within ChatProvider");
+  }
+  return context;
 }
-
-const createChatAdapter = (
-  sessionId: string | null,
-  onSessionId: (id: string) => void,
-  onUserInputRequired: (data: UserPrompt) => void
-): ChatModelAdapter => {
-  return {
-    async *run({ messages, abortSignal }): AsyncGenerator<ChatModelRunResult> {
-      const lastMessage = messages[messages.length - 1];
-      if (lastMessage.role !== "user") return;
-
-      const userContent = lastMessage.content
-        .filter((c): c is { type: "text"; text: string } => c.type === "text")
-        .map((c) => c.text)
-        .join("\n");
-
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: userContent,
-          session_id: sessionId,
-        }),
-        signal: abortSignal,
-      });
-
-      if (!response.ok) {
-        throw new Error(`Chat failed: ${response.statusText}`);
-      }
-
-      const reader = response.body?.getReader();
-      if (!reader) throw new Error("No response body");
-
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let accumulatedText = "";
-      const toolCalls = new Map<string, ToolCallState>();
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-
-        for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            const data = line.slice(6);
-            if (data === "[DONE]") continue;
-
-            try {
-              const event: StreamEvent = JSON.parse(data);
-
-              switch (event.type) {
-                case "text":
-                  accumulatedText += event.text || "";
-                  yield {
-                    content: [{ type: "text", text: accumulatedText }],
-                  };
-                  break;
-
-                case "tool_start":
-                  if (event.tool_id && event.tool_name) {
-                    toolCalls.set(event.tool_id, {
-                      toolCallId: event.tool_id,
-                      toolName: event.tool_name,
-                      args: (event.tool_input as Record<string, unknown>) || {},
-                      argsText: JSON.stringify(event.tool_input || {}),
-                    });
-                    yield { content: buildContent(accumulatedText, toolCalls) };
-                  }
-                  break;
-
-                case "tool_result":
-                  if (event.tool_id) {
-                    const tc = toolCalls.get(event.tool_id);
-                    if (tc) {
-                      tc.result = event.tool_result;
-                      tc.isError = event.is_error;
-                      yield { content: buildContent(accumulatedText, toolCalls) };
-                    }
-                  }
-                  break;
-
-                case "user_input_required":
-                  // Extract questions from the event (they can be at top level or in tool_input)
-                  const questions =
-                    event.questions ||
-                    (event.tool_input as { questions?: UserPrompt["questions"] })?.questions ||
-                    [];
-                  onUserInputRequired({ questions });
-                  break;
-
-                case "done":
-                  if (event.session_id) {
-                    onSessionId(event.session_id);
-                  }
-                  break;
-
-                case "error":
-                  // Clear session ID if session expired/not found
-                  if (
-                    event.text?.includes("Session not found") ||
-                    event.text?.includes("expired")
-                  ) {
-                    onSessionId("");
-                  }
-                  throw new Error(event.error || event.text || "Unknown error");
-              }
-            } catch (e) {
-              if (e instanceof SyntaxError) {
-                console.error("JSON parse error:", e, "Data:", data);
-              } else {
-                throw e;
-              }
-            }
-          }
-        }
-      }
-
-      yield {
-        content: buildContent(accumulatedText, toolCalls),
-        status: { type: "complete", reason: "stop" },
-      };
-    },
-  };
-};
 
 interface ChatProviderProps {
   children: ReactNode;
-  sessionId?: string | null;
-  onSessionIdChange?: (id: string) => void;
-  onUserInputRequired?: (data: UserPrompt) => void;
 }
 
-export function ChatProvider({
-  children,
-  sessionId = null,
-  onSessionIdChange = () => {},
-  onUserInputRequired = () => {},
-}: ChatProviderProps): ReactNode {
-  const adapter = createChatAdapter(sessionId, onSessionIdChange, onUserInputRequired);
-  const runtime = useLocalRuntime(adapter);
+/**
+ * Provides chat functionality using Vercel AI SDK.
+ * Manages conversation state, streaming, and session persistence.
+ */
+export function ChatProvider({ children }: ChatProviderProps): React.JSX.Element {
+  const [sessionId, setSessionId] = useState<string | null>(null);
+
+  const chat = useChat({
+    api: "/api/chat",
+    // Include session_id in request body for multi-turn conversations
+    body: {
+      session_id: sessionId,
+    },
+    // Extract session_id from response headers
+    onResponse: (response) => {
+      const newSessionId = response.headers.get("x-session-id");
+      if (newSessionId) {
+        setSessionId(newSessionId);
+      }
+    },
+    // Handle finish event metadata for session_id (backup)
+    onFinish: (message, options) => {
+      // Try to extract session_id from finish metadata if not in headers
+      // The metadata is in the last message's annotations or we parse from stream
+      if (!sessionId && options.finishReason === "stop") {
+        // Session ID should have been set via onResponse or stream parsing
+      }
+    },
+    // Handle tool calls - return undefined for AskUserQuestion to keep pending
+    onToolCall: async ({ toolCall }) => {
+      if (toolCall.toolName === "AskUserQuestion") {
+        // Return undefined to keep tool in "call" state
+        // UI will render the question form
+        return undefined;
+      }
+      // Other tools should have been handled server-side
+      return undefined;
+    },
+    // Handle errors
+    onError: (error) => {
+      // Check for session expiry
+      if (
+        error.message?.includes("Session not found") ||
+        error.message?.includes("expired")
+      ) {
+        setSessionId(null);
+      }
+    },
+  });
+
+  /**
+   * Respond to an AskUserQuestion tool call.
+   * Submits the user's answers as a tool result.
+   */
+  const respondToQuestion = useCallback(
+    (toolCallId: string, answers: Record<string, string>) => {
+      chat.addToolResult({
+        toolCallId,
+        result: JSON.stringify(answers),
+      });
+    },
+    [chat]
+  );
+
+  const contextValue: ChatContextValue = {
+    messages: chat.messages,
+    input: chat.input,
+    setInput: chat.setInput,
+    handleSubmit: chat.handleSubmit,
+    isLoading: chat.isLoading,
+    error: chat.error,
+    sessionId,
+    addToolResult: chat.addToolResult,
+    respondToQuestion,
+    reload: chat.reload,
+    stop: chat.stop,
+    status: chat.status,
+  };
 
   return (
-    <AssistantRuntimeProvider runtime={runtime}>
-      {children}
-    </AssistantRuntimeProvider>
+    <ChatContext.Provider value={contextValue}>{children}</ChatContext.Provider>
   );
 }

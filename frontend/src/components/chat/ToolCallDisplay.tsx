@@ -12,6 +12,7 @@ interface ToolCallProps {
     args?: Record<string, unknown>;
     result?: string;
     status: ToolStatus;
+    isError?: boolean;
   };
 }
 
@@ -46,6 +47,12 @@ export function ToolCallDisplay({ toolCall }: ToolCallProps) {
   const [expanded, setExpanded] = useState(false);
   const icon = TOOL_ICONS[toolCall.toolName] || "🔧";
 
+  // Determine display status - use isError if status is complete but had error
+  const displayStatus =
+    toolCall.status === "complete" && toolCall.isError
+      ? "error"
+      : toolCall.status;
+
   return (
     <div className="my-2 border rounded-lg overflow-hidden bg-gray-50 dark:bg-gray-800 dark:border-gray-700">
       <button
@@ -60,7 +67,7 @@ export function ToolCallDisplay({ toolCall }: ToolCallProps) {
         <span className="text-lg">{icon}</span>
         <span className="font-mono text-sm">{toolCall.toolName}</span>
         <span className="flex-1" />
-        {getStatusIcon(toolCall.status)}
+        {getStatusIcon(displayStatus)}
       </button>
 
       {expanded && (
