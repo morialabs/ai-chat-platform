@@ -9,7 +9,18 @@ import React, {
   useRef,
   type ReactNode,
 } from "react";
-import { useChat, type Message, type JSONValue } from "@ai-sdk/react";
+import { useChat, type Message } from "@ai-sdk/react";
+
+/**
+ * JSON value type for data from the stream.
+ */
+type JSONValue =
+  | null
+  | string
+  | number
+  | boolean
+  | { [key: string]: JSONValue }
+  | JSONValue[];
 
 /**
  * Context value provided by ChatProvider.
@@ -152,6 +163,7 @@ export function ChatProvider({ children }: ChatProviderProps): React.JSX.Element
     if (!sessionId && chat.data) {
       const newSessionId = extractSessionId(chat.data);
       if (newSessionId) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- Syncing external stream data into state
         setSessionId(newSessionId);
       }
     }

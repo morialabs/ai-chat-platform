@@ -1,12 +1,14 @@
 """Custom hooks for agent tool validation and logging."""
 
 import logging
-from typing import TYPE_CHECKING, Any, Literal
+from typing import Any, Literal, cast
 
-from claude_agent_sdk import HookContext, HookMatcher
-
-if TYPE_CHECKING:
-    from claude_agent_sdk.types import HookJSONOutput
+from claude_agent_sdk import (
+    HookContext,
+    HookInput,
+    HookJSONOutput,
+    HookMatcher,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -17,10 +19,10 @@ HookEventName = Literal[
 
 
 async def log_tool_usage(
-    input_data: dict[str, Any],
+    input_data: HookInput,
     tool_use_id: str | None,
     context: HookContext,
-) -> "HookJSONOutput":
+) -> HookJSONOutput:
     """Log all tool usage for analytics and debugging."""
     tool_name = input_data.get("tool_name", "unknown")
     logger.info(f"Tool used: {tool_name}, ID: {tool_use_id}")
@@ -28,15 +30,16 @@ async def log_tool_usage(
 
 
 async def validate_bash_commands(
-    input_data: dict[str, Any],
+    input_data: HookInput,
     tool_use_id: str | None,
     context: HookContext,
-) -> "HookJSONOutput":
+) -> HookJSONOutput:
     """Validate bash commands for safety, blocking dangerous patterns."""
     if input_data.get("tool_name") != "Bash":
         return {}
 
-    command = input_data.get("tool_input", {}).get("command", "")
+    tool_input = cast(dict[str, Any], input_data.get("tool_input") or {})
+    command = tool_input.get("command", "")
 
     # Block dangerous patterns
     dangerous_patterns = [
@@ -55,7 +58,9 @@ async def validate_bash_commands(
                 "hookSpecificOutput": {
                     "hookEventName": "PreToolUse",
                     "permissionDecision": "deny",
-                    "permissionDecisionReason": f"Dangerous command pattern blocked: {pattern}",
+                    "permissionDecisionReason": (
+                        f"Dangerous command pattern blocked: {pattern}"
+                    ),
                 }
             }
 
@@ -63,15 +68,16 @@ async def validate_bash_commands(
 
 
 async def track_file_changes(
-    input_data: dict[str, Any],
+    input_data: HookInput,
     tool_use_id: str | None,
     context: HookContext,
-) -> "HookJSONOutput":
+) -> HookJSONOutput:
     """Track file modifications for audit trail."""
     tool_name = input_data.get("tool_name")
 
     if tool_name in ["Write", "Edit"]:
-        file_path = input_data.get("tool_input", {}).get("file_path", "")
+        tool_input = cast(dict[str, Any], input_data.get("tool_input") or {})
+        file_path = tool_input.get("file_path", "")
         logger.info(f"File modified: {file_path}")
 
     return {}
