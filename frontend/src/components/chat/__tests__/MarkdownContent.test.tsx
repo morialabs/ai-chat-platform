@@ -227,7 +227,7 @@ print("hello")
 
   describe("horizontal rule", () => {
     it("renders horizontal rule", () => {
-      const { container } = render(
+      render(
         <MarkdownContent content={`Before
 
 ---

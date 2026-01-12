@@ -5,9 +5,22 @@ import React, {
   useContext,
   useState,
   useCallback,
+  useEffect,
+  useRef,
   type ReactNode,
 } from "react";
 import { useChat, type Message } from "@ai-sdk/react";
+
+/**
+ * JSON value type for data from the stream.
+ */
+type JSONValue =
+  | null
+  | string
+  | number
+  | boolean
+  | { [key: string]: JSONValue }
+  | JSONValue[];
 
 /**
  * Context value provided by ChatProvider.
@@ -62,31 +75,64 @@ interface ChatProviderProps {
 }
 
 /**
+ * Type for session data from the stream.
+ */
+interface SessionData {
+  session_id?: string;
+  cost?: number;
+}
+
+/**
+ * Extract session_id from data array (sent via code "2" events).
+ */
+function extractSessionId(data: JSONValue[] | undefined): string | null {
+  if (!data || !Array.isArray(data)) return null;
+
+  for (const item of data) {
+    if (
+      item &&
+      typeof item === "object" &&
+      "session_id" in item &&
+      typeof (item as SessionData).session_id === "string"
+    ) {
+      return (item as SessionData).session_id!;
+    }
+  }
+  return null;
+}
+
+/**
  * Provides chat functionality using Vercel AI SDK.
  * Manages conversation state, streaming, and session persistence.
  */
 export function ChatProvider({ children }: ChatProviderProps): React.JSX.Element {
   const [sessionId, setSessionId] = useState<string | null>(null);
+  // Use a ref to ensure the latest sessionId is always used in requests
+  const sessionIdRef = useRef<string | null>(null);
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
 
   const chat = useChat({
     api: "/api/chat",
-    // Include session_id in request body for multi-turn conversations
-    body: {
-      session_id: sessionId,
+    // Use streamProtocol to match our backend format
+    streamProtocol: "data",
+    // Use experimental_prepareRequestBody to dynamically include session_id
+    // This ensures the latest sessionId is always used, avoiding stale closures
+    experimental_prepareRequestBody: ({ messages, requestData }) => {
+      return {
+        messages,
+        data: requestData,
+        session_id: sessionIdRef.current,
+      };
     },
-    // Extract session_id from response headers
+    // Extract session_id from response headers (for existing sessions)
     onResponse: (response) => {
       const newSessionId = response.headers.get("x-session-id");
       if (newSessionId) {
         setSessionId(newSessionId);
-      }
-    },
-    // Handle finish event metadata for session_id (backup)
-    onFinish: (message, options) => {
-      // Try to extract session_id from finish metadata if not in headers
-      // The metadata is in the last message's annotations or we parse from stream
-      if (!sessionId && options.finishReason === "stop") {
-        // Session ID should have been set via onResponse or stream parsing
       }
     },
     // Handle tool calls - return undefined for AskUserQuestion to keep pending
@@ -110,6 +156,18 @@ export function ChatProvider({ children }: ChatProviderProps): React.JSX.Element
       }
     },
   });
+
+  // Extract session_id from data stream (code "2" events)
+  // This is the primary method for new sessions since headers aren't available
+  useEffect(() => {
+    if (!sessionId && chat.data) {
+      const newSessionId = extractSessionId(chat.data);
+      if (newSessionId) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- Syncing external stream data into state
+        setSessionId(newSessionId);
+      }
+    }
+  }, [chat.data, sessionId]);
 
   /**
    * Respond to an AskUserQuestion tool call.

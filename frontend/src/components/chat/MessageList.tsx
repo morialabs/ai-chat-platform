@@ -188,6 +188,38 @@ interface ToolInvocationItemProps {
 }
 
 /**
+ * Extracts result string and error status from a tool invocation result.
+ * Handles various formats: string, object with result/error keys, or JSON.
+ */
+function extractToolResult(rawResult: unknown): {
+  result: string | undefined;
+  isError: boolean;
+} {
+  if (rawResult === undefined || rawResult === null) {
+    return { result: undefined, isError: false };
+  }
+
+  if (typeof rawResult === "string") {
+    return { result: rawResult, isError: false };
+  }
+
+  if (typeof rawResult === "object") {
+    const obj = rawResult as Record<string, unknown>;
+    const isError = Boolean(obj.isError) || "error" in obj;
+
+    if ("result" in obj) {
+      return { result: String(obj.result), isError };
+    }
+    if ("error" in obj) {
+      return { result: String(obj.error), isError: true };
+    }
+    return { result: JSON.stringify(rawResult), isError };
+  }
+
+  return { result: JSON.stringify(rawResult), isError: false };
+}
+
+/**
  * Renders a tool invocation (either AskUserQuestion or regular tool).
  */
 function ToolInvocationItem({
@@ -213,24 +245,17 @@ function ToolInvocationItem({
     );
   }
 
-  // Regular tool call
+  // Regular tool call - extract status and result
+  const rawResult =
+    toolInvocation.state === "result" ? toolInvocation.result : undefined;
+  const { result, isError } = extractToolResult(rawResult);
+
   const status: "running" | "complete" | "error" =
-    toolInvocation.state === "result"
-      ? (toolInvocation.result as { isError?: boolean })?.isError
+    toolInvocation.state !== "result"
+      ? "running"
+      : isError
         ? "error"
-        : "complete"
-      : "running";
-
-  const result =
-    toolInvocation.state === "result"
-      ? (toolInvocation.result as { result?: string })?.result ||
-        JSON.stringify(toolInvocation.result)
-      : undefined;
-
-  const isError =
-    toolInvocation.state === "result"
-      ? (toolInvocation.result as { isError?: boolean })?.isError || false
-      : false;
+        : "complete";
 
   return (
     <ToolCallDisplay

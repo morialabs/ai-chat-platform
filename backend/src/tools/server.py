@@ -1,7 +1,7 @@
 """MCP server configuration for custom tools."""
 
-from claude_code_sdk import create_sdk_mcp_server
-from claude_code_sdk.types import McpSdkServerConfig
+from claude_agent_sdk import create_sdk_mcp_server
+from claude_agent_sdk.types import McpSdkServerConfig
 
 from src.tools.echo import echo_tool
 

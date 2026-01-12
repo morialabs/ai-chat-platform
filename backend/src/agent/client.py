@@ -5,13 +5,14 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
 
-from claude_code_sdk import (
+from claude_agent_sdk import (
     AssistantMessage,
-    ClaudeCodeOptions,
+    ClaudeAgentOptions,
     ResultMessage,
     TextBlock,
     ToolResultBlock,
     ToolUseBlock,
+    UserMessage,
 )
 
 from src.agent.exceptions import SessionNotFoundError
@@ -53,7 +54,7 @@ class AgentManager:
         self,
         prompt: str,
         session_id: str | None = None,
-        options: ClaudeCodeOptions | None = None,
+        options: ClaudeAgentOptions | None = None,
     ) -> AsyncIterator[StreamEvent]:
         """Stream response from existing or new session.
 
@@ -67,28 +68,52 @@ class AgentManager:
         """
         session: ManagedSession | None = None
 
+        logger.info(f"[stream_response] Received request with session_id={session_id}")
+
         # Try to get existing session
         if session_id:
             session = await self.session_manager.get_session(session_id)
             if session is None:
-                logger.info(f"Session {session_id} not found, creating new session")
+                logger.info(f"[stream_response] Session {session_id} not found, creating new")
+            else:
+                logger.info(
+                    f"[stream_response] Found existing session {session_id}, state={session.state}"
+                )
 
         # Create new session if needed
         if session is None:
             opts = options or get_default_options()
             session = await self.session_manager.create_session(opts)
-            logger.info(f"Created new session {session.session_id}")
+            logger.info(f"[stream_response] Created new session {session.session_id}")
+        elif session.sdk_session_id != "default":
+            # For multi-turn: reconnect the client with resume option to continue
+            # conversation. Works around SDK limitation where receive_response()
+            # can only be iterated once.
+            logger.info(f"[stream_response] Reconnecting with resume={session.sdk_session_id}")
+            await session.client.disconnect()
+            from dataclasses import replace
+
+            resumed_opts = replace(session.options, resume=session.sdk_session_id)
+            from claude_agent_sdk import ClaudeSDKClient
+
+            session.client = ClaudeSDKClient(options=resumed_opts)
+            await session.client.connect()
+            logger.info("[stream_response] Client reconnected with resume option")
 
         # Update session state
         await self.session_manager.set_session_state(session.session_id, SessionState.STREAMING)
 
         try:
             # Send query to the client
+            logger.info(f"[stream_response] Sending query to session {session.session_id}")
             await session.client.query(prompt)
+            logger.info("[stream_response] Query sent, starting to receive response")
 
             # Stream the response
             async for event in self._process_response(session):
                 yield event
+
+            logger.info(f"[stream_response] Response complete for session {session.session_id}")
 
         except Exception as e:
             logger.error(f"Error in session {session.session_id}: {e}")
@@ -125,12 +150,19 @@ class AgentManager:
         await self.session_manager.set_session_state(session.session_id, SessionState.STREAMING)
 
         try:
-            # Send the user's response
-            await session.client.query(response)
+            # Send the user's response with SDK session ID for multi-turn
+            logger.info(
+                f"[respond_to_prompt] Sending to session {session.session_id} "
+                f"(sdk_session_id={session.sdk_session_id})"
+            )
+            await session.client.query(response, session_id=session.sdk_session_id)
+            logger.info("[respond_to_prompt] Response sent, receiving response")
 
             # Stream the response
             async for event in self._process_response(session):
                 yield event
+
+            logger.info(f"[respond_to_prompt] Complete for session {session.session_id}")
 
         except Exception as e:
             logger.error(f"Error in session {session.session_id}: {e}")
@@ -142,6 +174,16 @@ class AgentManager:
                 session_id=session.session_id,
             )
 
+    def _create_tool_result_event(self, block: ToolResultBlock, session_id: str) -> StreamEvent:
+        """Create a StreamEvent from a ToolResultBlock."""
+        return StreamEvent(
+            type="tool_result",
+            tool_id=block.tool_use_id,
+            tool_result=block.content if isinstance(block.content, str) else str(block.content),
+            is_error=block.is_error or False,
+            session_id=session_id,
+        )
+
     async def _process_response(self, session: ManagedSession) -> AsyncIterator[StreamEvent]:
         """Process messages from the client and yield StreamEvents.
 
@@ -151,7 +193,12 @@ class AgentManager:
         Yields:
             StreamEvent objects for each message component.
         """
+        # Track AskUserQuestion tool IDs to skip their results
+        ask_user_question_ids: set[str] = set()
+
+        logger.info(f"[_process_response] Starting receive_response() for {session.session_id}")
         async for message in session.client.receive_response():
+            logger.info(f"[_process_response] Received message type: {type(message).__name__}")
             if isinstance(message, AssistantMessage):
                 for block in message.content:
                     if isinstance(block, TextBlock):
@@ -163,6 +210,8 @@ class AgentManager:
                     elif isinstance(block, ToolUseBlock):
                         # Check for AskUserQuestion tool
                         if block.name == "AskUserQuestion":
+                            # Track this tool ID to skip its result
+                            ask_user_question_ids.add(block.id)
                             await self.session_manager.set_session_state(
                                 session.session_id, SessionState.WAITING_INPUT
                             )
@@ -183,17 +232,23 @@ class AgentManager:
                                 session_id=session.session_id,
                             )
                     elif isinstance(block, ToolResultBlock):
-                        yield StreamEvent(
-                            type="tool_result",
-                            tool_id=block.tool_use_id,
-                            tool_result=block.content
-                            if isinstance(block.content, str)
-                            else str(block.content),
-                            is_error=block.is_error or False,
-                            session_id=session.session_id,
-                        )
+                        yield self._create_tool_result_event(block, session.session_id)
+
+            elif isinstance(message, UserMessage):
+                # UserMessage contains tool results from Claude Code SDK
+                for user_block in message.content:
+                    if isinstance(user_block, ToolResultBlock):
+                        # Skip tool results for AskUserQuestion (handled by frontend)
+                        if user_block.tool_use_id in ask_user_question_ids:
+                            continue
+                        yield self._create_tool_result_event(user_block, session.session_id)
 
             elif isinstance(message, ResultMessage):
+                # Save SDK session ID for multi-turn conversations
+                if message.session_id:
+                    logger.info(f"[_process_response] Saving SDK session_id: {message.session_id}")
+                    session.sdk_session_id = message.session_id
+
                 # Determine final state based on result
                 final_state = SessionState.ERROR if message.is_error else SessionState.ACTIVE
 
